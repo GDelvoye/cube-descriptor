@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Parametres des extensions - Cube MTG Analyzer</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }
+    .lists { display: grid; gap: 1.5rem; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); }
+    .panel { border: 1px solid #ddd; border-radius: 0.5rem; padding: 1rem; }
+    .quick-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: end; margin-bottom: 1.5rem; }
+    .set-list { display: grid; gap: 0.35rem; max-height: 65vh; overflow: auto; }
+    label { display: flex; gap: 0.5rem; align-items: baseline; }
+    button, select { font: inherit; padding: 0.45rem 0.7rem; }
+    button { cursor: pointer; margin-top: 1rem; }
+    .quick-actions button { margin-top: 0; }
+    .muted { color: #666; }
+    .set-code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <main>
+    <p><a href="{% url 'cards:search' %}">Recherche cartes</a> | <a href="/cubes/">Mes cubes</a></p>
+    <h1>Parametres des extensions</h1>
+    <p class="muted">Les cartes disponibles dans la recherche sont celles qui ont au moins une impression dans une extension conservee.</p>
+    <p class="muted">Configuration par defaut : seules les categories core et expansion sont conservees.</p>
+
+    <section class="panel">
+      <h2>Actions rapides par categorie</h2>
+      <form class="quick-actions" method="post" action="{% url 'cards:update_set_preferences' %}">
+        {% csrf_token %}
+        <label>
+          Categorie
+          <select name="set_type">
+            {% for set_type in set_types %}
+              <option value="{{ set_type.name }}">{{ set_type.name }} - {{ set_type.available_count }} conservee{{ set_type.available_count|pluralize }} / {{ set_type.excluded_count }} exclue{{ set_type.excluded_count|pluralize }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button type="submit" name="action" value="include_type">Conserver toute la categorie</button>
+        <button type="submit" name="action" value="exclude_type">Exclure toute la categorie</button>
+      </form>
+    </section>
+
+    <div class="lists">
+      <section class="panel">
+        <h2>Extensions conservees</h2>
+        <form method="post" action="{% url 'cards:update_set_preferences' %}">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="exclude">
+          <div class="set-list">
+            {% for set in available_sets %}
+              <label>
+                <input type="checkbox" name="set_ids" value="{{ set.pk }}">
+                <span><span class="set-code">{{ set.code|upper }}</span> - {{ set.name }} <span class="muted">({{ set.set_type }})</span></span>
+              </label>
+            {% empty %}
+              <p>Aucune extension conservee.</p>
+            {% endfor %}
+          </div>
+          <button type="submit">Exclure la selection</button>
+        </form>
+      </section>
+
+      <section class="panel">
+        <h2>Extensions exclues</h2>
+        <form method="post" action="{% url 'cards:update_set_preferences' %}">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="include">
+          <div class="set-list">
+            {% for set in excluded_sets %}
+              <label>
+                <input type="checkbox" name="set_ids" value="{{ set.pk }}">
+                <span><span class="set-code">{{ set.code|upper }}</span> - {{ set.name }} <span class="muted">({{ set.set_type }})</span></span>
+              </label>
+            {% empty %}
+              <p>Aucune extension exclue.</p>
+            {% endfor %}
+          </div>
+          <button type="submit">Conserver la selection</button>
+        </form>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

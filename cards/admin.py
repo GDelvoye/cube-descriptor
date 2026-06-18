@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import CardOracle, CardPrinting, Set
+from .models import CardOracle, CardPrinting, Set, UserSetPreference
 
 
 @admin.register(Set)
@@ -23,3 +23,11 @@ class CardPrintingAdmin(admin.ModelAdmin):
     search_fields = ("oracle__name", "set_code", "collector_number")
     list_filter = ("set_code", "rarity", "lang")
     autocomplete_fields = ("oracle", "set")
+
+
+@admin.register(UserSetPreference)
+class UserSetPreferenceAdmin(admin.ModelAdmin):
+    list_display = ("user", "set", "is_available")
+    list_filter = ("is_available", "set__set_type")
+    search_fields = ("user__username", "set__code", "set__name")
+    autocomplete_fields = ("user", "set")

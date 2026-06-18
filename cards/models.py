@@ -1,4 +1,8 @@
+from django.conf import settings
 from django.db import models
+
+
+DEFAULT_AVAILABLE_SET_TYPES = ("core", "expansion")
 
 
 class Set(models.Model):
@@ -14,11 +18,27 @@ class Set(models.Model):
         return f"{self.name} ({self.code})"
 
 
+class UserSetPreference(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="set_preferences")
+    set = models.ForeignKey(Set, on_delete=models.CASCADE, related_name="user_preferences")
+    is_available = models.BooleanField()
+
+    class Meta:
+        ordering = ["set__code"]
+        constraints = [
+            models.UniqueConstraint(fields=["user", "set"], name="unique_user_set_preference"),
+        ]
+
+    def __str__(self):
+        status = "available" if self.is_available else "excluded"
+        return f"{self.user} - {self.set.code}: {status}"
+
+
 class CardOracle(models.Model):
     scryfall_oracle_id = models.UUIDField(unique=True)
     name = models.CharField(max_length=255, db_index=True)
     mana_cost = models.CharField(max_length=255, blank=True)
-    mana_value = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    mana_value = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     colors = models.JSONField(default=list, blank=True)
     color_identity = models.JSONField(default=list, blank=True)
     type_line = models.CharField(max_length=255, blank=True, db_index=True)

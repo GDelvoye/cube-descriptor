@@ -3,6 +3,8 @@ from django.db.models import Prefetch, Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
+from cards.set_availability import get_available_sets
+
 from .models import Cube, CubeCard
 from .forms import CubeCardForm, CubeForm
 from stats.forms import CubeStatsForm, StatQueryForm
@@ -55,9 +57,12 @@ def cube_detail(request, pk):
             filter_error = str(exc)
 
     filtered_total = sum(cube_card.quantity for cube_card in filtered_cards)
+    available_sets = get_available_sets(request.user)
     for cube_card in filtered_cards:
         cube_card.edit_form = CubeCardForm(instance=cube_card)
-        cube_card.display_printing = cube_card.printing or cube_card.oracle.printings.first()
+        cube_card.display_printing = cube_card.printing or cube_card.oracle.printings.filter(
+            set__in=available_sets
+        ).order_by("released_at", "set_code", "collector_number").first()
     return render(
         request,
         "cubes/detail.html",
