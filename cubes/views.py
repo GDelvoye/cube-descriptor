@@ -5,13 +5,13 @@ from django.views.decorators.http import require_POST
 
 from cards.display import apply_cube_card_display, build_language_querystrings, get_display_language
 from cards.set_availability import get_available_sets
-
-from .models import Cube, CubeCard
-from .forms import CubeCardForm, CubeForm
 from stats.forms import CubeStatsForm, StatQueryForm
 from stats.models import StatQuery
 from stats.probabilities import probability_at_least, probability_between, probability_exactly
 from stats.query_engine import QuerySyntaxError, count_cube_matches
+
+from .forms import CubeCardForm, CubeForm
+from .models import Cube, CubeCard
 
 
 @login_required
@@ -64,9 +64,12 @@ def cube_detail(request, pk):
     filtered_total = sum(cube_card.quantity for cube_card in filtered_cards)
     for cube_card in filtered_cards:
         cube_card.edit_form = CubeCardForm(instance=cube_card)
-        cube_card.display_printing = cube_card.printing or cube_card.oracle.printings.filter(
-            set__in=available_sets
-        ).order_by("released_at", "set_code", "collector_number").first()
+        cube_card.display_printing = (
+            cube_card.printing
+            or cube_card.oracle.printings.filter(set__in=available_sets)
+            .order_by("released_at", "set_code", "collector_number")
+            .first()
+        )
         apply_cube_card_display(cube_card, display_language, available_sets)
         if cube_card.display_localized_printing and cube_card.display_localized_printing.image_url:
             cube_card.display_printing = cube_card.display_localized_printing
@@ -123,7 +126,9 @@ def cube_stats(request, pk):
 
     if form.is_valid():
         try:
-            matching_count, matching_rows = count_cube_matches(cube_cards, form.cleaned_data["raw_query"], available_sets=available_sets)
+            matching_count, matching_rows = count_cube_matches(
+                cube_cards, form.cleaned_data["raw_query"], available_sets=available_sets
+            )
             for cube_card in matching_rows:
                 apply_cube_card_display(cube_card, display_language, available_sets)
             booster_size = min(cube.booster_size, total_cards)
@@ -147,7 +152,9 @@ def cube_stats(request, pk):
             if between_min is not None and between_max is not None:
                 result["between_min"] = between_min
                 result["between_max"] = between_max
-                result["between"] = probability_between(total_cards, matching_count, booster_size, between_min, between_max)
+                result["between"] = probability_between(
+                    total_cards, matching_count, booster_size, between_min, between_max
+                )
                 result["between_percent"] = result["between"] * 100
         except QuerySyntaxError as exc:
             error = str(exc)

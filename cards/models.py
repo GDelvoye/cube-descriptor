@@ -1,7 +1,6 @@
 from django.conf import settings
 from django.db import models
 
-
 DEFAULT_AVAILABLE_SET_TYPES = ("core", "expansion")
 
 

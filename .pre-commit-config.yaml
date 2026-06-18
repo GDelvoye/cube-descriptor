@@ -1,0 +1,23 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-format-check
+        name: ruff format check
+        entry: bash -lc 'uv run ruff format --check .'
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: ruff-lint
+        name: ruff lint
+        entry: bash -lc 'uv run ruff check .'
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: django-tests
+        name: django tests
+        entry: bash -lc 'uv run python manage.py test'
+        language: system
+        pass_filenames: false
+        always_run: true

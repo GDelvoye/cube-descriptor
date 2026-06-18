@@ -1,0 +1,30 @@
+[project]
+name = "cube-mtg-analyzer"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "Django>=5.0,<5.1",
+    "django-environ>=0.11,<0.12",
+    "psycopg[binary]>=3.1,<3.3",
+    "requests>=2.31,<3",
+]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=3.7,<4",
+    "ruff>=0.8,<0.9",
+]
+
+[tool.ruff]
+cache-dir = "/tmp/cube-ruff-cache"
+line-length = 120
+target-version = "py312"
+extend-exclude = ["*/migrations/*.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["B904", "E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

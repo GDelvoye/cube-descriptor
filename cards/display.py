@@ -19,25 +19,31 @@ def build_language_querystrings(request):
 
 def apply_oracle_display(oracle, display_language, available_sets=None):
     oracle.display_localized_printing = select_display_printing(oracle, display_language, available_sets)
-    apply_display_fields(oracle, oracle, display_language, available_sets)
+    apply_display_fields(oracle, oracle, display_language, available_sets, oracle.display_localized_printing)
     return oracle
 
 
 def apply_cube_card_display(cube_card, display_language, available_sets=None):
     cube_card.display_localized_printing = select_display_printing(cube_card.oracle, display_language, available_sets)
-    apply_display_fields(cube_card, cube_card.oracle, display_language, available_sets)
+    apply_display_fields(
+        cube_card,
+        cube_card.oracle,
+        display_language,
+        available_sets,
+        cube_card.display_localized_printing,
+    )
     return cube_card
 
 
-def apply_display_fields(target, oracle, display_language, available_sets=None):
+def apply_display_fields(target, oracle, display_language, available_sets=None, preferred_printing=None):
     target.display_name, target.display_name_is_fallback = localized_value(
-        oracle, oracle.name, "printed_name", display_language, available_sets
+        oracle, oracle.name, "printed_name", display_language, available_sets, preferred_printing
     )
     target.display_type_line, target.display_type_line_is_fallback = localized_value(
-        oracle, oracle.type_line, "printed_type_line", display_language, available_sets
+        oracle, oracle.type_line, "printed_type_line", display_language, available_sets, preferred_printing
     )
     target.display_oracle_text, target.display_oracle_text_is_fallback = localized_value(
-        oracle, oracle.oracle_text, "printed_oracle_text", display_language, available_sets
+        oracle, oracle.oracle_text, "printed_oracle_text", display_language, available_sets, preferred_printing
     )
 
 
@@ -87,12 +93,18 @@ def select_english_printing(oracle, available_sets=None):
 
 
 def is_complete_printing(printing):
-    return bool(printing.printed_name and printing.printed_type_line and printing.printed_oracle_text and printing.image_url)
+    return bool(
+        printing.printed_name and printing.printed_type_line and printing.printed_oracle_text and printing.image_url
+    )
 
 
-def localized_value(oracle, default, field, display_language, available_sets=None):
+def localized_value(oracle, default, field, display_language, available_sets=None, preferred_printing=None):
     if display_language != "fr":
         return default, False
+    if preferred_printing:
+        translated = getattr(preferred_printing, field) or ""
+        if translated:
+            return translated, False
     printing = select_localized_printing(oracle, display_language, available_sets, required_field=field)
     if not printing:
         return default, bool(default)

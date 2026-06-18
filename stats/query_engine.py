@@ -1,10 +1,11 @@
 import re
 from decimal import Decimal, InvalidOperation
 
-
-TOKEN_RE = re.compile(r'\s+AND\s+', re.IGNORECASE)
+TOKEN_RE = re.compile(r"\s+AND\s+", re.IGNORECASE)
 TERM_RE = re.compile(r'^(?P<field>color|identity|type|text|tag|keyword|name):(?P<value>"[^"]+"|\S+)$', re.IGNORECASE)
-NUMERIC_RE = re.compile(r'^(?P<field>mv|power|toughness)\s*(?P<op><=|>=|=|<|>)\s*(?P<value>\d+(?:\.\d+)?)$', re.IGNORECASE)
+NUMERIC_RE = re.compile(
+    r"^(?P<field>mv|power|toughness)\s*(?P<op><=|>=|=|<|>)\s*(?P<value>\d+(?:\.\d+)?)$", re.IGNORECASE
+)
 
 
 class QuerySyntaxError(ValueError):
@@ -46,7 +47,9 @@ def parse_query(raw_query, available_sets=None):
 def parse_term(token, available_sets=None):
     numeric_match = NUMERIC_RE.match(token)
     if numeric_match:
-        return numeric_matcher(numeric_match.group("field").lower(), numeric_match.group("op"), Decimal(numeric_match.group("value")))
+        return numeric_matcher(
+            numeric_match.group("field").lower(), numeric_match.group("op"), Decimal(numeric_match.group("value"))
+        )
 
     term_match = TERM_RE.match(token)
     if not term_match:

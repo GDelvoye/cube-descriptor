@@ -36,7 +36,9 @@ class CubeCard(models.Model):
 
     cube = models.ForeignKey(Cube, on_delete=models.CASCADE, related_name="cards")
     oracle = models.ForeignKey(CardOracle, on_delete=models.CASCADE, related_name="cube_entries")
-    printing = models.ForeignKey(CardPrinting, on_delete=models.SET_NULL, null=True, blank=True, related_name="cube_entries")
+    printing = models.ForeignKey(
+        CardPrinting, on_delete=models.SET_NULL, null=True, blank=True, related_name="cube_entries"
+    )
     quantity = models.PositiveSmallIntegerField(default=1)
     section = models.CharField(max_length=64, choices=Section.choices, default=Section.MAIN)
     tags = models.JSONField(default=list, blank=True)

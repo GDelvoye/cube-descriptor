@@ -1,9 +1,9 @@
 from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
+from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.db.models import Exists, OuterRef, Prefetch, Q
-from django.contrib.auth.decorators import login_required
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
@@ -29,7 +29,9 @@ def card_search(request):
         "text": request.GET.get("text", "").strip(),
         "mv_lte": request.GET.get("mv_lte", "").strip(),
         "set": request.GET.get("set", "").strip().lower(),
-        "raw_query": (selected_stat_query.raw_query if selected_stat_query else request.GET.get("raw_query", "")).strip(),
+        "raw_query": (
+            selected_stat_query.raw_query if selected_stat_query else request.GET.get("raw_query", "")
+        ).strip(),
         "stat_query": request.GET.get("stat_query", "").strip(),
         "cube": selected_cube_id,
     }
@@ -139,10 +141,7 @@ def update_set_preferences(request):
 
 def save_set_preferences(user, set_ids, is_available):
     UserSetPreference.objects.bulk_create(
-        [
-            UserSetPreference(user=user, set_id=set_id, is_available=is_available)
-            for set_id in set_ids
-        ],
+        [UserSetPreference(user=user, set_id=set_id, is_available=is_available) for set_id in set_ids],
         update_conflicts=True,
         update_fields=["is_available"],
         unique_fields=["user", "set"],
@@ -181,7 +180,10 @@ def add_selected_to_cube(request):
         cube = form.cleaned_data["cube"]
         added_count = len(oracle_ids) * form.cleaned_data["quantity"]
         add_oracles_to_cube(cube, oracles, form.cleaned_data["quantity"])
-        messages.success(request, f"{added_count} carte{'s' if added_count > 1 else ''} ajoutee{'s' if added_count > 1 else ''} a {cube.name}.")
+        messages.success(
+            request,
+            f"{added_count} carte{'s' if added_count > 1 else ''} ajoutee{'s' if added_count > 1 else ''} a {cube.name}.",
+        )
         return redirect_to_next(request)
     return redirect("cards:search")
 
@@ -211,7 +213,8 @@ def get_visible_stat_queries(user):
     if not user.is_authenticated:
         return StatQuery.objects.filter(scope=StatQuery.Scope.GLOBAL, owner__isnull=True).order_by("name")
     return (
-        StatQuery.objects.filter(scope=StatQuery.Scope.GLOBAL, owner__isnull=True) | StatQuery.objects.filter(owner=user)
+        StatQuery.objects.filter(scope=StatQuery.Scope.GLOBAL, owner__isnull=True)
+        | StatQuery.objects.filter(owner=user)
     ).order_by("scope", "name")
 
 
