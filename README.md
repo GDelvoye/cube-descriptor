@@ -13,6 +13,8 @@ La page d'accueil est disponible sur `http://localhost:8010/`.
 
 L'admin Django est disponible sur `http://localhost:8010/admin/`.
 
+La recherche cartes est disponible sur `http://localhost:8010/cards/`.
+
 ## Commandes utiles
 
 ```bash

@@ -9,7 +9,7 @@ services:
     environment:
       DEBUG: ${DEBUG:-True}
       SECRET_KEY: ${SECRET_KEY:-unsafe-development-secret-key}
-      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,100.108.207.111}
       DATABASE_URL: ${DATABASE_URL:-postgres://cube:cube@db:5432/cube}
     depends_on:
       - db

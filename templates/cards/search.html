@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Recherche cartes - Cube MTG Analyzer</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }
+    form { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); margin-bottom: 1.5rem; }
+    label { display: grid; gap: 0.25rem; font-weight: 600; }
+    input, select, button { font: inherit; padding: 0.45rem; }
+    button { cursor: pointer; }
+    .card-grid { display: grid; gap: 1rem; }
+    .card { border: 1px solid #ddd; border-radius: 0.5rem; padding: 1rem; }
+    .muted { color: #666; }
+    .oracle-text { white-space: pre-wrap; }
+    .pagination { display: flex; gap: 1rem; margin-top: 1.5rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <p><a href="/">Accueil</a> | <a href="/admin/">Admin</a></p>
+    <h1>Recherche cartes</h1>
+
+    <form method="get">
+      <label>
+        Nom ou type
+        <input name="q" value="{{ filters.q }}" placeholder="Lightning Bolt, Elf...">
+      </label>
+      <label>
+        Couleur
+        <select name="color">
+          <option value="">Toutes</option>
+          {% for color in "WUBRG" %}
+            <option value="{{ color }}" {% if filters.color == color %}selected{% endif %}>{{ color }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Type
+        <input name="type" value="{{ filters.type }}" placeholder="Creature, Artifact...">
+      </label>
+      <label>
+        Texte oracle
+        <input name="text" value="{{ filters.text }}" placeholder="enters the battlefield">
+      </label>
+      <label>
+        Mana value max
+        <input name="mv_lte" value="{{ filters.mv_lte }}" placeholder="2">
+      </label>
+      <label>
+        Set
+        <select name="set">
+          <option value="">Tous</option>
+          {% for set in sets %}
+            <option value="{{ set.code }}" {% if filters.set == set.code %}selected{% endif %}>{{ set.code }} - {{ set.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit">Rechercher</button>
+    </form>
+
+    {% if filters.mv_lte_error %}
+      <p>{{ filters.mv_lte_error }}</p>
+    {% endif %}
+
+    <p class="muted">{{ total_count }} carte{{ total_count|pluralize }} trouvee{{ total_count|pluralize }}.</p>
+
+    <section class="card-grid">
+      {% for card in page.object_list %}
+        <article class="card">
+          <h2>{{ card.name }}</h2>
+          <p class="muted">{{ card.mana_cost }} | MV {{ card.mana_value|default:"?" }} | {{ card.type_line }}</p>
+          {% if card.oracle_text %}<p class="oracle-text">{{ card.oracle_text }}</p>{% endif %}
+          {% with printing=card.printings.all.0 %}
+            {% if printing %}
+              <p class="muted">Dernier printing importe : {{ printing.set_code|upper }} #{{ printing.collector_number }} - {{ printing.rarity }}</p>
+              {% if printing.image_url %}<p><a href="{{ printing.image_url }}">Image Scryfall</a></p>{% endif %}
+            {% endif %}
+          {% endwith %}
+        </article>
+      {% empty %}
+        <p>Aucune carte ne correspond aux filtres.</p>
+      {% endfor %}
+    </section>
+
+    <nav class="pagination">
+      {% if page.has_previous %}
+        <a href="?{{ querystring }}{% if querystring %}&{% endif %}page={{ page.previous_page_number }}">Page precedente</a>
+      {% endif %}
+      <span>Page {{ page.number }} / {{ page.paginator.num_pages }}</span>
+      {% if page.has_next %}
+        <a href="?{{ querystring }}{% if querystring %}&{% endif %}page={{ page.next_page_number }}">Page suivante</a>
+      {% endif %}
+    </nav>
+  </main>
+</body>
+</html>
