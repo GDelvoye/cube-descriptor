@@ -14,6 +14,8 @@
     .bulk-controls { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); align-items: end; }
     .card-grid { display: grid; gap: 1rem; }
     .card { border: 1px solid #ddd; border-radius: 0.5rem; padding: 1rem; }
+    .card-layout { display: grid; gap: 1rem; grid-template-columns: minmax(8rem, 12rem) 1fr; }
+    .card-image { border-radius: 0.5rem; max-width: 100%; }
     .muted { color: #666; }
     .oracle-text { white-space: pre-wrap; }
     .pagination { display: flex; gap: 1rem; margin-top: 1.5rem; }
@@ -21,7 +23,7 @@
 </head>
 <body>
   <main>
-    <p><a href="/">Accueil</a> | <a href="/admin/">Admin</a></p>
+    <p><a href="/">Accueil</a> | <a href="/stats/queries/">Requetes custom</a> | <a href="/admin/">Admin</a></p>
     <h1>Recherche cartes</h1>
     {% if user.is_authenticated %}
       <p><a href="/cubes/">Mes cubes</a></p>
@@ -64,11 +66,27 @@
           {% endfor %}
         </select>
       </label>
+      <label>
+        Requete sauvegardee
+        <select id="stat-query-select" name="stat_query">
+          <option value="">Aucune</option>
+          {% for stat_query in stat_queries %}
+            <option value="{{ stat_query.pk }}" data-raw-query="{{ stat_query.raw_query }}" {% if filters.stat_query == stat_query.pk|stringformat:"s" %}selected{% endif %}>{{ stat_query.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Requete dynamique
+        <input id="raw-query-input" name="raw_query" value="{{ filters.raw_query }}" placeholder='power=2 AND keyword:Flying'>
+      </label>
       <button type="submit">Rechercher</button>
     </form>
 
     {% if filters.mv_lte_error %}
       <p>{{ filters.mv_lte_error }}</p>
+    {% endif %}
+    {% if filters.raw_query_error %}
+      <p>{{ filters.raw_query_error }}</p>
     {% endif %}
 
     <p class="muted">{{ total_count }} carte{{ total_count|pluralize }} trouvee{{ total_count|pluralize }}.</p>
@@ -98,14 +116,20 @@
                 <input type="checkbox" name="oracle_ids" value="{{ card.pk }}">
                 Selectionner
               </label>
-              <h2>{{ card.name }}</h2>
-              <p class="muted">{{ card.mana_cost }} | MV {{ card.mana_value|default:"?" }} | {{ card.type_line }}</p>
-              {% if card.oracle_text %}<p class="oracle-text">{{ card.oracle_text }}</p>{% endif %}
               {% with printing=card.printings.all.0 %}
-                {% if printing %}
-                  <p class="muted">Dernier printing importe : {{ printing.set_code|upper }} #{{ printing.collector_number }} - {{ printing.rarity }}</p>
-                  {% if printing.image_url %}<p><a href="{{ printing.image_url }}">Image Scryfall</a></p>{% endif %}
-                {% endif %}
+                <div class="card-layout">
+                  <div>
+                    {% if printing.image_url %}<img class="card-image" src="{{ printing.image_url }}" alt="{{ card.name }}">{% endif %}
+                  </div>
+                  <div>
+                    <h2>{{ card.name }}</h2>
+                    <p class="muted">{{ card.mana_cost }} | MV {{ card.mana_value|default:"?" }} | {{ card.type_line }}</p>
+                    {% if card.oracle_text %}<p class="oracle-text">{{ card.oracle_text }}</p>{% endif %}
+                    {% if printing %}
+                      <p class="muted">Dernier printing importe : {{ printing.set_code|upper }} #{{ printing.collector_number }} - {{ printing.rarity }}</p>
+                    {% endif %}
+                  </div>
+                </div>
               {% endwith %}
             </article>
           {% empty %}
@@ -120,14 +144,20 @@
       <section class="card-grid">
         {% for card in page.object_list %}
           <article class="card">
-            <h2>{{ card.name }}</h2>
-            <p class="muted">{{ card.mana_cost }} | MV {{ card.mana_value|default:"?" }} | {{ card.type_line }}</p>
-            {% if card.oracle_text %}<p class="oracle-text">{{ card.oracle_text }}</p>{% endif %}
             {% with printing=card.printings.all.0 %}
-              {% if printing %}
-                <p class="muted">Dernier printing importe : {{ printing.set_code|upper }} #{{ printing.collector_number }} - {{ printing.rarity }}</p>
-                {% if printing.image_url %}<p><a href="{{ printing.image_url }}">Image Scryfall</a></p>{% endif %}
-              {% endif %}
+              <div class="card-layout">
+                <div>
+                  {% if printing.image_url %}<img class="card-image" src="{{ printing.image_url }}" alt="{{ card.name }}">{% endif %}
+                </div>
+                <div>
+                  <h2>{{ card.name }}</h2>
+                  <p class="muted">{{ card.mana_cost }} | MV {{ card.mana_value|default:"?" }} | {{ card.type_line }}</p>
+                  {% if card.oracle_text %}<p class="oracle-text">{{ card.oracle_text }}</p>{% endif %}
+                  {% if printing %}
+                    <p class="muted">Dernier printing importe : {{ printing.set_code|upper }} #{{ printing.collector_number }} - {{ printing.rarity }}</p>
+                  {% endif %}
+                </div>
+              </div>
             {% endwith %}
           </article>
         {% empty %}
@@ -146,5 +176,15 @@
       {% endif %}
     </nav>
   </main>
+  <script>
+    const statQuerySelect = document.getElementById("stat-query-select");
+    const rawQueryInput = document.getElementById("raw-query-input");
+
+    if (statQuerySelect && rawQueryInput) {
+      statQuerySelect.addEventListener("change", () => {
+        rawQueryInput.value = statQuerySelect.selectedOptions[0]?.dataset.rawQuery || "";
+      });
+    }
+  </script>
 </body>
 </html>

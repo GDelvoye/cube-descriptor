@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} - Cube MTG Analyzer</title>
+</head>
+<body>
+  <main>
+    <p><a href="{% url 'stats:query_list' %}">Retour aux requetes</a></p>
+    <h1>{{ title }}</h1>
+    <form method="post">
+      {% csrf_token %}
+      {{ form.as_p }}
+      <button type="submit">Sauvegarder</button>
+    </form>
+    <p>Exemples : <code>type:Creature AND text:"When this creature enters"</code>, <code>power=2 AND keyword:Flying</code>, <code>mv&lt;=2</code>.</p>
+  </main>
+</body>
+</html>

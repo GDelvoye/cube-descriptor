@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Requetes custom - Cube MTG Analyzer</title>
+</head>
+<body>
+  <main>
+    <p><a href="/">Accueil</a> | <a href="/cards/">Cartes</a> | <a href="/cubes/">Mes cubes</a></p>
+    <h1>Requetes custom</h1>
+    <p><a href="{% url 'stats:query_create' %}">Creer une requete utilisateur</a></p>
+
+    <h2>Mes requetes</h2>
+    <ul>
+      {% for stat_query in queries %}
+        <li>
+          <a href="{% url 'stats:query_detail' stat_query.pk %}">{{ stat_query.name }}</a>
+          - <code>{{ stat_query.raw_query }}</code>
+          - {{ stat_query.scope }}{% if stat_query.cube %} / {{ stat_query.cube.name }}{% endif %}
+        </li>
+      {% empty %}
+        <li>Aucune requete utilisateur.</li>
+      {% endfor %}
+    </ul>
+
+    <h2>Requetes globales</h2>
+    <ul>
+      {% for stat_query in global_queries %}
+        <li>{{ stat_query.name }} - <code>{{ stat_query.raw_query }}</code></li>
+      {% empty %}
+        <li>Aucune requete globale.</li>
+      {% endfor %}
+    </ul>
+  </main>
+</body>
+</html>

@@ -1,6 +1,6 @@
 from django import forms
 
-from .models import Cube
+from .models import Cube, CubeCard
 
 
 class CubeForm(forms.ModelForm):
@@ -17,3 +17,24 @@ class AddCardToCubeForm(forms.Form):
         super().__init__(*args, **kwargs)
         if user and user.is_authenticated:
             self.fields["cube"].queryset = Cube.objects.filter(owner=user).order_by("name")
+
+
+class CubeCardForm(forms.ModelForm):
+    tags_text = forms.CharField(label="Tags", required=False, help_text="Separes par des virgules: removal, fixing")
+
+    class Meta:
+        model = CubeCard
+        fields = ["quantity", "section", "notes"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["quantity"].min_value = 1
+        if self.instance and self.instance.pk:
+            self.fields["tags_text"].initial = ", ".join(self.instance.tags or [])
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        instance.tags = [tag.strip() for tag in self.cleaned_data["tags_text"].split(",") if tag.strip()]
+        if commit:
+            instance.save()
+        return instance

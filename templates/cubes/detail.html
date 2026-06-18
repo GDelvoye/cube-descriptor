@@ -4,29 +4,85 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ cube.name }} - Cube MTG Analyzer</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border-bottom: 1px solid #ddd; padding: 0.5rem; text-align: left; vertical-align: top; }
+    input, textarea, button { font: inherit; }
+    input[type="number"] { width: 5rem; }
+    textarea { min-width: 16rem; min-height: 3rem; }
+    .card-image { border-radius: 0.4rem; max-width: 8rem; }
+    .muted { color: #666; }
+    .actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  </style>
 </head>
 <body>
   <main>
-    <p><a href="{% url 'cubes:list' %}">Mes cubes</a> | <a href="/cards/">Ajouter des cartes</a></p>
+    <p><a href="{% url 'cubes:list' %}">Mes cubes</a> | <a href="/cards/">Ajouter des cartes</a> | <a href="/stats/queries/">Requetes custom</a></p>
     <h1>{{ cube.name }}</h1>
     {% if cube.description %}<p>{{ cube.description }}</p>{% endif %}
     <p>{{ total_cards }} cartes | booster {{ cube.booster_size }} | {{ cube.visibility }}</p>
     <p><a href="{% url 'cubes:stats' cube.pk %}">Stats du cube</a></p>
+    <p class="muted">Tags utiles pour les stats: removal, fixing, ramp, aggro, payoff. Exemple de requete: <code>tag:removal</code>.</p>
+
+    <h2>Filtrer ce cube</h2>
+    <form method="get">
+      <label>
+        Requete sauvegardee
+        <select id="cube-stat-query-select" name="stat_query">
+          <option value="">Aucune</option>
+          {% for stat_query in stat_queries %}
+            <option value="{{ stat_query.pk }}" data-raw-query="{{ stat_query.raw_query }}" {% if selected_query.pk == stat_query.pk %}selected{% endif %}>{{ stat_query.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Requete dynamique
+        <input id="cube-raw-query-input" name="raw_query" value="{{ raw_query }}" placeholder='type:Creature AND text:"When this creature enters"'>
+      </label>
+      <button type="submit">Filtrer</button>
+      <a href="{% url 'cubes:detail' cube.pk %}">Reinitialiser</a>
+    </form>
+    {% if filter_error %}<p>{{ filter_error }}</p>{% endif %}
+    {% if raw_query %}<p>{{ filtered_total }} carte{{ filtered_total|pluralize }} matchante{{ filtered_total|pluralize }} sur {{ total_cards }}.</p>{% endif %}
 
     <h2>Cartes</h2>
     <table>
       <thead>
-        <tr><th>Quantite</th><th>Carte</th><th>Type</th><th>Tags</th><th>Actions</th></tr>
+        <tr><th>Image</th><th>Carte</th><th>Edition</th><th>Metadonnees cube</th><th>Actions</th></tr>
       </thead>
       <tbody>
-        {% for cube_card in cube.cards.all %}
+        {% for cube_card in cube_cards %}
           <tr>
-            <td>{{ cube_card.quantity }}</td>
-            <td>{{ cube_card.oracle.name }}</td>
-            <td>{{ cube_card.oracle.type_line }}</td>
-            <td>{{ cube_card.tags|join:", " }}</td>
             <td>
-              <form method="post" action="{% url 'cubes:card_remove' cube.pk cube_card.pk %}">
+              {% if cube_card.display_printing.image_url %}
+                <img class="card-image" src="{{ cube_card.display_printing.image_url }}" alt="{{ cube_card.oracle.name }}">
+              {% endif %}
+            </td>
+            <td>
+              <strong>{{ cube_card.oracle.name }}</strong><br>
+              <span class="muted">{{ cube_card.oracle.mana_cost }} | MV {{ cube_card.oracle.mana_value|default:"?" }}</span><br>
+              {{ cube_card.oracle.type_line }}
+            </td>
+            <td>
+              {% if cube_card.display_printing %}
+                {{ cube_card.display_printing.set_code|upper }} #{{ cube_card.display_printing.collector_number }}
+              {% else %}
+                <span class="muted">Printing par defaut</span>
+              {% endif %}
+            </td>
+            <td>
+              <form method="post" action="{% url 'cubes:card_edit' cube.pk cube_card.pk %}">
+                {% csrf_token %}
+                <p>{{ cube_card.edit_form.quantity.label_tag }} {{ cube_card.edit_form.quantity }}</p>
+                <p>{{ cube_card.edit_form.section.label_tag }} {{ cube_card.edit_form.section }}</p>
+                <p>{{ cube_card.edit_form.tags_text.label_tag }} {{ cube_card.edit_form.tags_text }}</p>
+                <p>{{ cube_card.edit_form.notes.label_tag }} {{ cube_card.edit_form.notes }}</p>
+                <button type="submit">Sauvegarder</button>
+              </form>
+            </td>
+            <td>
+              <form class="actions" method="post" action="{% url 'cubes:card_remove' cube.pk cube_card.pk %}">
                 {% csrf_token %}
                 <button name="decrement" value="1" type="submit">-1</button>
                 <button type="submit">Retirer</button>
@@ -39,5 +95,15 @@
       </tbody>
     </table>
   </main>
+  <script>
+    const cubeStatQuerySelect = document.getElementById("cube-stat-query-select");
+    const cubeRawQueryInput = document.getElementById("cube-raw-query-input");
+
+    if (cubeStatQuerySelect && cubeRawQueryInput) {
+      cubeStatQuerySelect.addEventListener("change", () => {
+        cubeRawQueryInput.value = cubeStatQuerySelect.selectedOptions[0]?.dataset.rawQuery || "";
+      });
+    }
+  </script>
 </body>
 </html>

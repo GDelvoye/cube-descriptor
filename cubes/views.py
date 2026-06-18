@@ -3,9 +3,10 @@ from django.db.models import Prefetch, Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
-from .forms import CubeForm
 from .models import Cube, CubeCard
-from stats.forms import CubeStatsForm
+from .forms import CubeCardForm, CubeForm
+from stats.forms import CubeStatsForm, StatQueryForm
+from stats.models import StatQuery
 from stats.probabilities import probability_at_least, probability_between, probability_exactly
 from stats.query_engine import QuerySyntaxError, count_cube_matches
 
@@ -39,8 +40,38 @@ def cube_detail(request, pk):
         pk=pk,
         owner=request.user,
     )
-    total_cards = sum(cube_card.quantity for cube_card in cube.cards.all())
-    return render(request, "cubes/detail.html", {"cube": cube, "total_cards": total_cards})
+    cube_cards = list(cube.cards.all())
+    total_cards = sum(cube_card.quantity for cube_card in cube_cards)
+    visible_queries = get_visible_stat_queries(request.user, cube)
+    selected_query = get_selected_stat_query(request, visible_queries)
+    raw_query = (selected_query.raw_query if selected_query else request.GET.get("raw_query", "")).strip()
+    filter_error = None
+    filtered_cards = cube_cards
+    if raw_query:
+        try:
+            _, matching_rows = count_cube_matches(cube_cards, raw_query)
+            filtered_cards = matching_rows
+        except QuerySyntaxError as exc:
+            filter_error = str(exc)
+
+    filtered_total = sum(cube_card.quantity for cube_card in filtered_cards)
+    for cube_card in filtered_cards:
+        cube_card.edit_form = CubeCardForm(instance=cube_card)
+        cube_card.display_printing = cube_card.printing or cube_card.oracle.printings.first()
+    return render(
+        request,
+        "cubes/detail.html",
+        {
+            "cube": cube,
+            "cube_cards": filtered_cards,
+            "total_cards": total_cards,
+            "filtered_total": filtered_total,
+            "raw_query": raw_query,
+            "filter_error": filter_error,
+            "stat_queries": visible_queries,
+            "selected_query": selected_query,
+        },
+    )
 
 
 @login_required
@@ -54,9 +85,25 @@ def cube_stats(request, pk):
     )
     cube_cards = list(cube.cards.all())
     total_cards = sum(cube_card.quantity for cube_card in cube_cards)
+    visible_queries = get_visible_stat_queries(request.user, cube)
+    selected_query = get_selected_stat_query(request, visible_queries)
+    initial = {"raw_query": selected_query.raw_query} if selected_query and "raw_query" not in request.GET else None
     form = CubeStatsForm(request.GET or None)
+    if initial and not request.GET.get("raw_query"):
+        form = CubeStatsForm({**request.GET.dict(), **initial})
+    stat_query_form = StatQueryForm()
     result = None
     error = None
+
+    if request.method == "POST":
+        stat_query_form = StatQueryForm(request.POST)
+        if stat_query_form.is_valid():
+            stat_query = stat_query_form.save(commit=False)
+            stat_query.owner = request.user
+            if stat_query.scope == StatQuery.Scope.CUBE:
+                stat_query.cube = cube
+            stat_query.save()
+            return redirect(f"{request.path}?stat_query={stat_query.pk}&minimum_hits=1")
 
     if form.is_valid():
         try:
@@ -92,8 +139,43 @@ def cube_stats(request, pk):
     return render(
         request,
         "cubes/stats.html",
-        {"cube": cube, "form": form, "result": result, "error": error, "total_cards": total_cards},
+        {
+            "cube": cube,
+            "form": form,
+            "stat_query_form": stat_query_form,
+            "stat_queries": visible_queries,
+            "selected_query": selected_query,
+            "result": result,
+            "error": error,
+            "total_cards": total_cards,
+        },
     )
+
+
+def get_visible_stat_queries(user, cube):
+    return (
+        StatQuery.objects.filter(scope=StatQuery.Scope.GLOBAL, owner__isnull=True)
+        | StatQuery.objects.filter(owner=user, scope=StatQuery.Scope.USER)
+        | StatQuery.objects.filter(owner=user, scope=StatQuery.Scope.CUBE, cube=cube)
+    ).order_by("scope", "name")
+
+
+def get_selected_stat_query(request, visible_queries):
+    stat_query_id = request.GET.get("stat_query")
+    if not stat_query_id or not stat_query_id.isdigit():
+        return None
+    return visible_queries.filter(pk=stat_query_id).first()
+
+
+@login_required
+@require_POST
+def cube_card_edit(request, pk, cube_card_id):
+    cube = get_object_or_404(Cube, pk=pk, owner=request.user)
+    cube_card = get_object_or_404(CubeCard, pk=cube_card_id, cube=cube)
+    form = CubeCardForm(request.POST, instance=cube_card)
+    if form.is_valid():
+        form.save()
+    return redirect("cubes:detail", pk=cube.pk)
 
 
 @login_required

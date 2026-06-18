@@ -17,6 +17,8 @@ La recherche cartes est disponible sur `http://localhost:8010/cards/`.
 
 Les cubes utilisateur sont disponibles sur `http://localhost:8010/cubes/` apres connexion.
 
+Les stats d'un cube permettent de creer des requetes sauvegardees reutilisables, par exemple `tag:removal`, `power=2 AND keyword:Flying` ou `color:U AND type:Creature`.
+
 ## Commandes utiles
 
 ```bash

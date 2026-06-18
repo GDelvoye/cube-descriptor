@@ -8,4 +8,5 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("cards/", include("cards.urls")),
     path("cubes/", include("cubes.urls")),
+    path("stats/", include("stats.urls")),
 ]

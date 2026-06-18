@@ -7,11 +7,30 @@
 </head>
 <body>
   <main>
-    <p><a href="{% url 'cubes:detail' cube.pk %}">Retour au cube</a> | <a href="/cards/">Cartes</a></p>
+    <p><a href="{% url 'cubes:detail' cube.pk %}">Retour au cube</a> | <a href="/cards/">Cartes</a> | <a href="/stats/queries/">Requetes custom</a></p>
     <h1>Stats - {{ cube.name }}</h1>
     <p>{{ total_cards }} cartes dans le cube | booster {{ cube.booster_size }}</p>
+    <p>Exemples: <code>type:Creature</code>, <code>tag:removal</code>, <code>tag:fixing</code>, <code>mv&lt;=2</code>, <code>color:U AND type:Creature</code>.</p>
 
+    <h2>Requetes sauvegardees</h2>
+    <ul>
+      {% for stat_query in stat_queries %}
+        <li><a href="?stat_query={{ stat_query.pk }}&minimum_hits=1">{{ stat_query.name }}</a> - <code>{{ stat_query.raw_query }}</code></li>
+      {% empty %}
+        <li>Aucune requete sauvegardee.</li>
+      {% endfor %}
+    </ul>
+
+    <h2>Creer une requete sauvegardee</h2>
+    <form method="post">
+      {% csrf_token %}
+      {{ stat_query_form.as_p }}
+      <button type="submit">Sauvegarder la requete</button>
+    </form>
+
+    <h2>Calcul ad hoc</h2>
     <form method="get">
+      {% if selected_query %}<p>Requete selectionnee : {{ selected_query.name }}</p>{% endif %}
       {{ form.as_p }}
       <button type="submit">Calculer</button>
     </form>
