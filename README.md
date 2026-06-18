@@ -15,6 +15,8 @@ L'admin Django est disponible sur `http://localhost:8010/admin/`.
 
 La recherche cartes est disponible sur `http://localhost:8010/cards/`.
 
+Les cubes utilisateur sont disponibles sur `http://localhost:8010/cubes/` apres connexion.
+
 ## Commandes utiles
 
 ```bash

@@ -2,7 +2,12 @@ from decimal import Decimal, InvalidOperation
 
 from django.core.paginator import Paginator
 from django.db.models import Prefetch, Q
-from django.shortcuts import render
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_POST
+
+from cubes.forms import AddCardToCubeForm
+from cubes.models import CubeCard
 
 from .models import CardOracle, CardPrinting, Set
 
@@ -54,5 +59,43 @@ def card_search(request):
             "sets": Set.objects.order_by("code"),
             "total_count": paginator.count,
             "querystring": query_params.urlencode(),
+            "add_card_form": AddCardToCubeForm(user=request.user) if request.user.is_authenticated else None,
         },
     )
+
+
+@login_required
+@require_POST
+def add_to_cube(request, oracle_id):
+    oracle = get_object_or_404(CardOracle, pk=oracle_id)
+    form = AddCardToCubeForm(request.POST, user=request.user)
+    if form.is_valid():
+        cube = add_oracles_to_cube(form.cleaned_data["cube"], [oracle], form.cleaned_data["quantity"])
+        return redirect("cubes:detail", pk=cube.pk)
+    return redirect("cards:search")
+
+
+@login_required
+@require_POST
+def add_selected_to_cube(request):
+    form = AddCardToCubeForm(request.POST, user=request.user)
+    oracle_ids = request.POST.getlist("oracle_ids")
+    if form.is_valid() and oracle_ids:
+        oracles = CardOracle.objects.filter(pk__in=oracle_ids)
+        cube = add_oracles_to_cube(form.cleaned_data["cube"], oracles, form.cleaned_data["quantity"])
+        return redirect("cubes:detail", pk=cube.pk)
+    return redirect("cards:search")
+
+
+def add_oracles_to_cube(cube, oracles, quantity):
+    for oracle in oracles:
+        cube_card, created = CubeCard.objects.get_or_create(
+            cube=cube,
+            oracle=oracle,
+            section="",
+            defaults={"quantity": quantity},
+        )
+        if not created:
+            cube_card.quantity += quantity
+            cube_card.save(update_fields=["quantity", "updated_at"])
+    return cube

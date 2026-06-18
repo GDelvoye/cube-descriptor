@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stats {{ cube.name }} - Cube MTG Analyzer</title>
+</head>
+<body>
+  <main>
+    <p><a href="{% url 'cubes:detail' cube.pk %}">Retour au cube</a> | <a href="/cards/">Cartes</a></p>
+    <h1>Stats - {{ cube.name }}</h1>
+    <p>{{ total_cards }} cartes dans le cube | booster {{ cube.booster_size }}</p>
+
+    <form method="get">
+      {{ form.as_p }}
+      <button type="submit">Calculer</button>
+    </form>
+
+    {% if error %}<p>{{ error }}</p>{% endif %}
+
+    {% if result %}
+      <h2>Resultat</h2>
+      <p>N = {{ result.total_cards }} cartes, K = {{ result.matching_count }} cartes matchantes, B = {{ result.booster_size }} cartes par booster.</p>
+      <p>Probabilite d'avoir au moins {{ result.minimum_hits }} carte{{ result.minimum_hits|pluralize }} matchante{{ result.minimum_hits|pluralize }} : <strong>{{ result.at_least|floatformat:4 }}</strong> soit <strong>{{ result.at_least_percent|floatformat:2 }}%</strong></p>
+      {% if result.exactly is not None %}
+        <p>Probabilite d'avoir exactement {{ result.exact_hits }} : <strong>{{ result.exactly|floatformat:4 }}</strong> soit <strong>{{ result.exactly_percent|floatformat:2 }}%</strong></p>
+      {% endif %}
+      {% if result.between is not None %}
+        <p>Probabilite d'avoir entre {{ result.between_min }} et {{ result.between_max }} : <strong>{{ result.between|floatformat:4 }}</strong> soit <strong>{{ result.between_percent|floatformat:2 }}%</strong></p>
+      {% endif %}
+
+      <h3>Cartes matchantes</h3>
+      <ul>
+        {% for cube_card in result.matching_rows %}
+          <li>{{ cube_card.quantity }}x {{ cube_card.oracle.name }} - {{ cube_card.oracle.type_line }}</li>
+        {% empty %}
+          <li>Aucune carte matchante.</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </main>
+</body>
+</html>

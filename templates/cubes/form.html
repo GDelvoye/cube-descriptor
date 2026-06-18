@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nouveau cube - Cube MTG Analyzer</title>
+</head>
+<body>
+  <main>
+    <p><a href="{% url 'cubes:list' %}">Retour aux cubes</a></p>
+    <h1>Nouveau cube</h1>
+    <form method="post">
+      {% csrf_token %}
+      {{ form.as_p }}
+      <button type="submit">Creer</button>
+    </form>
+  </main>
+</body>
+</html>

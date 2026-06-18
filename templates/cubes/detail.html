@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ cube.name }} - Cube MTG Analyzer</title>
+</head>
+<body>
+  <main>
+    <p><a href="{% url 'cubes:list' %}">Mes cubes</a> | <a href="/cards/">Ajouter des cartes</a></p>
+    <h1>{{ cube.name }}</h1>
+    {% if cube.description %}<p>{{ cube.description }}</p>{% endif %}
+    <p>{{ total_cards }} cartes | booster {{ cube.booster_size }} | {{ cube.visibility }}</p>
+    <p><a href="{% url 'cubes:stats' cube.pk %}">Stats du cube</a></p>
+
+    <h2>Cartes</h2>
+    <table>
+      <thead>
+        <tr><th>Quantite</th><th>Carte</th><th>Type</th><th>Tags</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for cube_card in cube.cards.all %}
+          <tr>
+            <td>{{ cube_card.quantity }}</td>
+            <td>{{ cube_card.oracle.name }}</td>
+            <td>{{ cube_card.oracle.type_line }}</td>
+            <td>{{ cube_card.tags|join:", " }}</td>
+            <td>
+              <form method="post" action="{% url 'cubes:card_remove' cube.pk cube_card.pk %}">
+                {% csrf_token %}
+                <button name="decrement" value="1" type="submit">-1</button>
+                <button type="submit">Retirer</button>
+              </form>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5">Ce cube est vide.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </main>
+</body>
+</html>
