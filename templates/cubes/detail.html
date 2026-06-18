@@ -13,20 +13,30 @@
     textarea { min-width: 16rem; min-height: 3rem; }
     .card-image { border-radius: 0.4rem; max-width: 8rem; }
     .muted { color: #666; }
+    .oracle-text { white-space: pre-wrap; }
     .actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .language-toggle { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .language-toggle strong, .language-toggle a { border: 1px solid #bbb; border-radius: 999px; padding: 0.25rem 0.6rem; text-decoration: none; }
+    .fallback-lang { border: 1px solid #bbb; border-radius: 999px; color: #666; font-size: 0.75rem; padding: 0.05rem 0.35rem; }
   </style>
 </head>
 <body>
   <main>
-    <p><a href="{% url 'cubes:list' %}">Mes cubes</a> | <a href="/cards/">Ajouter des cartes</a> | <a href="/stats/queries/">Requetes custom</a></p>
+    <p><a href="{% url 'cubes:list' %}">Mes cubes</a> | <a href="/cards/?cube={{ cube.pk }}">Ajouter des cartes</a> | <a href="/stats/queries/">Requetes custom</a></p>
     <h1>{{ cube.name }}</h1>
     {% if cube.description %}<p>{{ cube.description }}</p>{% endif %}
     <p>{{ total_cards }} cartes | booster {{ cube.booster_size }} | {{ cube.visibility }}</p>
     <p><a href="{% url 'cubes:stats' cube.pk %}">Stats du cube</a></p>
+    <p class="language-toggle">
+      Affichage cartes
+      {% if display_language == "en" %}<strong>EN</strong>{% else %}<a href="?{{ language_querystrings.en }}">EN</a>{% endif %}
+      {% if display_language == "fr" %}<strong>FR</strong>{% else %}<a href="?{{ language_querystrings.fr }}">FR</a>{% endif %}
+    </p>
     <p class="muted">Tags utiles pour les stats: removal, fixing, ramp, aggro, payoff. Exemple de requete: <code>tag:removal</code>.</p>
 
     <h2>Filtrer ce cube</h2>
     <form method="get">
+      <input type="hidden" name="display_lang" value="{{ display_language }}">
       <label>
         Requete sauvegardee
         <select id="cube-stat-query-select" name="stat_query">
@@ -56,13 +66,14 @@
           <tr>
             <td>
               {% if cube_card.display_printing.image_url %}
-                <img class="card-image" src="{{ cube_card.display_printing.image_url }}" alt="{{ cube_card.oracle.name }}">
+                <img class="card-image" src="{{ cube_card.display_printing.image_url }}" alt="{{ cube_card.display_name }}">
               {% endif %}
             </td>
             <td>
-              <strong>{{ cube_card.oracle.name }}</strong><br>
+              <strong>{{ cube_card.display_name }}{% if cube_card.display_name_is_fallback %} <span class="fallback-lang">EN</span>{% endif %}</strong><br>
               <span class="muted">{{ cube_card.oracle.mana_cost }} | MV {{ cube_card.oracle.mana_value|default:"?" }}</span><br>
-              {{ cube_card.oracle.type_line }}
+              {% if cube_card.display_type_line %}{{ cube_card.display_type_line }}{% if cube_card.display_type_line_is_fallback %} <span class="fallback-lang">EN</span>{% endif %}{% endif %}
+              {% if cube_card.display_oracle_text %}<p class="oracle-text">{% if cube_card.display_oracle_text_is_fallback %}<span class="fallback-lang">EN</span> {% endif %}{{ cube_card.display_oracle_text }}</p>{% endif %}
             </td>
             <td>
               {% if cube_card.display_printing %}

@@ -17,6 +17,9 @@ class AddCardToCubeForm(forms.Form):
         super().__init__(*args, **kwargs)
         if user and user.is_authenticated:
             self.fields["cube"].queryset = Cube.objects.filter(owner=user).order_by("name")
+            initial_cube = self.initial.get("cube")
+            if initial_cube and not self.fields["cube"].queryset.filter(pk=initial_cube).exists():
+                self.initial.pop("cube", None)
 
 
 class CubeCardForm(forms.ModelForm):

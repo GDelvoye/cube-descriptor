@@ -4,18 +4,29 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Stats {{ cube.name }} - Cube MTG Analyzer</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }
+    .language-toggle { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .language-toggle strong, .language-toggle a { border: 1px solid #bbb; border-radius: 999px; padding: 0.25rem 0.6rem; text-decoration: none; }
+    .fallback-lang { border: 1px solid #bbb; border-radius: 999px; color: #666; font-size: 0.75rem; padding: 0.05rem 0.35rem; }
+  </style>
 </head>
 <body>
   <main>
     <p><a href="{% url 'cubes:detail' cube.pk %}">Retour au cube</a> | <a href="/cards/">Cartes</a> | <a href="/stats/queries/">Requetes custom</a></p>
     <h1>Stats - {{ cube.name }}</h1>
     <p>{{ total_cards }} cartes dans le cube | booster {{ cube.booster_size }}</p>
+    <p class="language-toggle">
+      Affichage cartes
+      {% if display_language == "en" %}<strong>EN</strong>{% else %}<a href="?{{ language_querystrings.en }}">EN</a>{% endif %}
+      {% if display_language == "fr" %}<strong>FR</strong>{% else %}<a href="?{{ language_querystrings.fr }}">FR</a>{% endif %}
+    </p>
     <p>Exemples: <code>type:Creature</code>, <code>tag:removal</code>, <code>tag:fixing</code>, <code>mv&lt;=2</code>, <code>color:U AND type:Creature</code>.</p>
 
     <h2>Requetes sauvegardees</h2>
     <ul>
       {% for stat_query in stat_queries %}
-        <li><a href="?stat_query={{ stat_query.pk }}&minimum_hits=1">{{ stat_query.name }}</a> - <code>{{ stat_query.raw_query }}</code></li>
+        <li><a href="?stat_query={{ stat_query.pk }}&minimum_hits=1&display_lang={{ display_language }}">{{ stat_query.name }}</a> - <code>{{ stat_query.raw_query }}</code></li>
       {% empty %}
         <li>Aucune requete sauvegardee.</li>
       {% endfor %}
@@ -30,6 +41,7 @@
 
     <h2>Calcul ad hoc</h2>
     <form method="get">
+      <input type="hidden" name="display_lang" value="{{ display_language }}">
       {% if selected_query %}<p>Requete selectionnee : {{ selected_query.name }}</p>{% endif %}
       {{ form.as_p }}
       <button type="submit">Calculer</button>
@@ -51,7 +63,7 @@
       <h3>Cartes matchantes</h3>
       <ul>
         {% for cube_card in result.matching_rows %}
-          <li>{{ cube_card.quantity }}x {{ cube_card.oracle.name }} - {{ cube_card.oracle.type_line }}</li>
+          <li>{{ cube_card.quantity }}x {{ cube_card.display_name }}{% if cube_card.display_name_is_fallback %} <span class="fallback-lang">EN</span>{% endif %}{% if cube_card.display_type_line %} - {{ cube_card.display_type_line }}{% if cube_card.display_type_line_is_fallback %} <span class="fallback-lang">EN</span>{% endif %}{% endif %}</li>
         {% empty %}
           <li>Aucune carte matchante.</li>
         {% endfor %}

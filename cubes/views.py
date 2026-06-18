@@ -3,6 +3,7 @@ from django.db.models import Prefetch, Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
+from cards.display import apply_cube_card_display, build_language_querystrings, get_display_language
 from cards.set_availability import get_available_sets
 
 from .models import Cube, CubeCard
@@ -44,25 +45,31 @@ def cube_detail(request, pk):
     )
     cube_cards = list(cube.cards.all())
     total_cards = sum(cube_card.quantity for cube_card in cube_cards)
+    display_language = get_display_language(request)
+    available_sets = get_available_sets(request.user)
     visible_queries = get_visible_stat_queries(request.user, cube)
     selected_query = get_selected_stat_query(request, visible_queries)
+    display_language = get_display_language(request)
     raw_query = (selected_query.raw_query if selected_query else request.GET.get("raw_query", "")).strip()
     filter_error = None
     filtered_cards = cube_cards
+    available_sets = get_available_sets(request.user)
     if raw_query:
         try:
-            _, matching_rows = count_cube_matches(cube_cards, raw_query)
+            _, matching_rows = count_cube_matches(cube_cards, raw_query, available_sets=available_sets)
             filtered_cards = matching_rows
         except QuerySyntaxError as exc:
             filter_error = str(exc)
 
     filtered_total = sum(cube_card.quantity for cube_card in filtered_cards)
-    available_sets = get_available_sets(request.user)
     for cube_card in filtered_cards:
         cube_card.edit_form = CubeCardForm(instance=cube_card)
         cube_card.display_printing = cube_card.printing or cube_card.oracle.printings.filter(
             set__in=available_sets
         ).order_by("released_at", "set_code", "collector_number").first()
+        apply_cube_card_display(cube_card, display_language, available_sets)
+        if cube_card.display_localized_printing and cube_card.display_localized_printing.image_url:
+            cube_card.display_printing = cube_card.display_localized_printing
     return render(
         request,
         "cubes/detail.html",
@@ -75,6 +82,8 @@ def cube_detail(request, pk):
             "filter_error": filter_error,
             "stat_queries": visible_queries,
             "selected_query": selected_query,
+            "display_language": display_language,
+            "language_querystrings": build_language_querystrings(request),
         },
     )
 
@@ -90,6 +99,8 @@ def cube_stats(request, pk):
     )
     cube_cards = list(cube.cards.all())
     total_cards = sum(cube_card.quantity for cube_card in cube_cards)
+    display_language = get_display_language(request)
+    available_sets = get_available_sets(request.user)
     visible_queries = get_visible_stat_queries(request.user, cube)
     selected_query = get_selected_stat_query(request, visible_queries)
     initial = {"raw_query": selected_query.raw_query} if selected_query and "raw_query" not in request.GET else None
@@ -112,7 +123,9 @@ def cube_stats(request, pk):
 
     if form.is_valid():
         try:
-            matching_count, matching_rows = count_cube_matches(cube_cards, form.cleaned_data["raw_query"])
+            matching_count, matching_rows = count_cube_matches(cube_cards, form.cleaned_data["raw_query"], available_sets=available_sets)
+            for cube_card in matching_rows:
+                apply_cube_card_display(cube_card, display_language, available_sets)
             booster_size = min(cube.booster_size, total_cards)
             minimum_hits = form.cleaned_data["minimum_hits"]
             exact_hits = form.cleaned_data["exact_hits"]
@@ -153,6 +166,8 @@ def cube_stats(request, pk):
             "result": result,
             "error": error,
             "total_cards": total_cards,
+            "display_language": display_language,
+            "language_querystrings": build_language_querystrings(request),
         },
     )
 

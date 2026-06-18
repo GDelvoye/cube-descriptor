@@ -1,9 +1,11 @@
 from decimal import Decimal, InvalidOperation
 
+from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db.models import Exists, OuterRef, Prefetch, Q
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
 from cubes.forms import AddCardToCubeForm
@@ -11,12 +13,15 @@ from cubes.models import CubeCard
 from stats.models import StatQuery
 from stats.query_engine import QuerySyntaxError, build_oracle_matchers
 
+from .display import apply_oracle_display, build_language_querystrings, get_display_language
 from .models import CardOracle, CardPrinting, Set, UserSetPreference
 from .set_availability import get_available_sets, get_excluded_sets
 
 
 def card_search(request):
     selected_stat_query = get_selected_stat_query(request)
+    display_language = get_display_language(request)
+    selected_cube_id = request.GET.get("cube", "").strip()
     filters = {
         "q": request.GET.get("q", "").strip(),
         "color": request.GET.get("color", "").strip().upper(),
@@ -26,6 +31,7 @@ def card_search(request):
         "set": request.GET.get("set", "").strip().lower(),
         "raw_query": (selected_stat_query.raw_query if selected_stat_query else request.GET.get("raw_query", "")).strip(),
         "stat_query": request.GET.get("stat_query", "").strip(),
+        "cube": selected_cube_id,
     }
     available_sets = get_available_sets(request.user)
     printings = CardPrinting.objects.select_related("set").order_by("released_at", "set_code", "collector_number")
@@ -41,13 +47,24 @@ def card_search(request):
     )
 
     if filters["q"]:
-        queryset = queryset.filter(Q(name__icontains=filters["q"]) | Q(type_line__icontains=filters["q"]))
+        queryset = queryset.filter(
+            Q(name__icontains=filters["q"])
+            | Q(type_line__icontains=filters["q"])
+            | Q(printings__set__in=available_sets, printings__printed_name__icontains=filters["q"])
+            | Q(printings__set__in=available_sets, printings__printed_type_line__icontains=filters["q"])
+        ).distinct()
     if filters["color"]:
         queryset = queryset.filter(colors__contains=[filters["color"]])
     if filters["type"]:
-        queryset = queryset.filter(type_line__icontains=filters["type"])
+        queryset = queryset.filter(
+            Q(type_line__icontains=filters["type"])
+            | Q(printings__set__in=available_sets, printings__printed_type_line__icontains=filters["type"])
+        ).distinct()
     if filters["text"]:
-        queryset = queryset.filter(oracle_text__icontains=filters["text"])
+        queryset = queryset.filter(
+            Q(oracle_text__icontains=filters["text"])
+            | Q(printings__set__in=available_sets, printings__printed_oracle_text__icontains=filters["text"])
+        ).distinct()
     if filters["mv_lte"]:
         try:
             queryset = queryset.filter(mana_value__lte=Decimal(filters["mv_lte"]))
@@ -57,13 +74,18 @@ def card_search(request):
         queryset = queryset.filter(printings__set_code=filters["set"]).distinct()
     if filters["raw_query"]:
         try:
-            matchers = build_oracle_matchers(filters["raw_query"])
+            matchers = build_oracle_matchers(filters["raw_query"], available_sets=available_sets)
             queryset = [oracle for oracle in queryset if all(matcher(oracle) for matcher in matchers)]
         except QuerySyntaxError as exc:
             filters["raw_query_error"] = str(exc)
 
     paginator = Paginator(queryset, 25)
     page = paginator.get_page(request.GET.get("page"))
+    for oracle in page.object_list:
+        oracle.display_printing = next(iter(oracle.printings.all()), None)
+        apply_oracle_display(oracle, display_language, available_sets)
+        if oracle.display_localized_printing and oracle.display_localized_printing.image_url:
+            oracle.display_printing = oracle.display_localized_printing
     query_params = request.GET.copy()
     query_params.pop("page", None)
 
@@ -76,8 +98,12 @@ def card_search(request):
             "sets": available_sets.order_by("code"),
             "total_count": paginator.count,
             "querystring": query_params.urlencode(),
-            "add_card_form": AddCardToCubeForm(user=request.user) if request.user.is_authenticated else None,
+            "add_card_form": AddCardToCubeForm(user=request.user, initial={"cube": selected_cube_id})
+            if request.user.is_authenticated
+            else None,
             "stat_queries": get_visible_stat_queries(request.user),
+            "display_language": display_language,
+            "language_querystrings": build_language_querystrings(request),
         },
     )
 
@@ -152,8 +178,18 @@ def add_selected_to_cube(request):
     oracle_ids = request.POST.getlist("oracle_ids")
     if form.is_valid() and oracle_ids:
         oracles = CardOracle.objects.filter(pk__in=oracle_ids)
-        cube = add_oracles_to_cube(form.cleaned_data["cube"], oracles, form.cleaned_data["quantity"])
-        return redirect("cubes:detail", pk=cube.pk)
+        cube = form.cleaned_data["cube"]
+        added_count = len(oracle_ids) * form.cleaned_data["quantity"]
+        add_oracles_to_cube(cube, oracles, form.cleaned_data["quantity"])
+        messages.success(request, f"{added_count} carte{'s' if added_count > 1 else ''} ajoutee{'s' if added_count > 1 else ''} a {cube.name}.")
+        return redirect_to_next(request)
+    return redirect("cards:search")
+
+
+def redirect_to_next(request):
+    next_url = request.POST.get("next")
+    if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+        return redirect(next_url)
     return redirect("cards:search")
 
 

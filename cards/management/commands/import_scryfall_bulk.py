@@ -31,7 +31,12 @@ class Command(BaseCommand):
         parser.add_argument(
             "--include-non-english",
             action="store_true",
-            help="Import every language. By default only English cards are imported.",
+            help="Import every language. By default only English and French cards are imported.",
+        )
+        parser.add_argument(
+            "--languages",
+            default="en,fr",
+            help="Comma-separated languages to import unless --include-non-english is set.",
         )
         parser.add_argument(
             "--limit",
@@ -42,6 +47,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         source_file = options["file"]
         include_non_english = options["include_non_english"]
+        languages = {language.strip() for language in options["languages"].split(",") if language.strip()}
         limit = options["limit"]
 
         if source_file is None:
@@ -60,7 +66,7 @@ class Command(BaseCommand):
         skipped = 0
 
         for card in cards:
-            if not include_non_english and card.get("lang") != "en":
+            if not include_non_english and card.get("lang") not in languages:
                 skipped += 1
                 continue
             if not card.get("oracle_id"):
@@ -110,23 +116,24 @@ class Command(BaseCommand):
 
     def _upsert_oracle(self, card):
         face_values = extract_face_values(card)
-        return CardOracle.objects.update_or_create(
-            scryfall_oracle_id=card["oracle_id"],
-            defaults={
-                "name": card.get("name", ""),
-                "mana_cost": face_values["mana_cost"] or card.get("mana_cost", ""),
-                "mana_value": card.get("cmc"),
-                "colors": card.get("colors") or [],
-                "color_identity": card.get("color_identity") or [],
-                "type_line": card.get("type_line", ""),
-                "oracle_text": face_values["oracle_text"] or card.get("oracle_text", ""),
-                "keywords": card.get("keywords") or [],
-                "power": face_values["power"] or card.get("power", ""),
-                "toughness": face_values["toughness"] or card.get("toughness", ""),
-            },
-        )
+        defaults = {
+            "name": card.get("name", ""),
+            "mana_cost": face_values["mana_cost"] or card.get("mana_cost", ""),
+            "mana_value": card.get("cmc"),
+            "colors": card.get("colors") or [],
+            "color_identity": card.get("color_identity") or [],
+            "type_line": card.get("type_line", ""),
+            "oracle_text": face_values["oracle_text"] or card.get("oracle_text", ""),
+            "keywords": card.get("keywords") or [],
+            "power": face_values["power"] or card.get("power", ""),
+            "toughness": face_values["toughness"] or card.get("toughness", ""),
+        }
+        if card.get("lang") != "en":
+            return CardOracle.objects.get_or_create(scryfall_oracle_id=card["oracle_id"], defaults=defaults)
+        return CardOracle.objects.update_or_create(scryfall_oracle_id=card["oracle_id"], defaults=defaults)
 
     def _upsert_printing(self, card, oracle, card_set):
+        printed_values = extract_printed_values(card)
         image_url = ""
         if card.get("image_uris"):
             image_url = card["image_uris"].get("normal") or card["image_uris"].get("large") or ""
@@ -145,6 +152,9 @@ class Command(BaseCommand):
                 "image_url": image_url,
                 "released_at": parse_date(card.get("released_at")),
                 "lang": card.get("lang", ""),
+                "printed_name": printed_values["name"],
+                "printed_type_line": printed_values["type_line"],
+                "printed_oracle_text": printed_values["oracle_text"],
             },
         )
 
@@ -165,4 +175,28 @@ def extract_face_values(card):
         "oracle_text": "\n---\n".join(face.get("oracle_text", "") for face in faces).strip(),
         "power": " // ".join(face.get("power", "") for face in faces if face.get("power")).strip(),
         "toughness": " // ".join(face.get("toughness", "") for face in faces if face.get("toughness")).strip(),
+    }
+
+
+def extract_printed_values(card):
+    use_oracle_fallback = card.get("lang") == "en"
+    faces = card.get("card_faces") or []
+    if faces:
+        return {
+            "name": " // ".join(
+                (face.get("printed_name") or (face.get("name") if use_oracle_fallback else "") or "") for face in faces
+            ).strip(),
+            "type_line": " // ".join(
+                (face.get("printed_type_line") or (face.get("type_line") if use_oracle_fallback else "") or "")
+                for face in faces
+            ).strip(),
+            "oracle_text": "\n---\n".join(
+                (face.get("printed_text") or (face.get("oracle_text") if use_oracle_fallback else "") or "")
+                for face in faces
+            ).strip(),
+        }
+    return {
+        "name": card.get("printed_name") or (card.get("name", "") if use_oracle_fallback else ""),
+        "type_line": card.get("printed_type_line") or (card.get("type_line", "") if use_oracle_fallback else ""),
+        "oracle_text": card.get("printed_text") or (card.get("oracle_text", "") if use_oracle_fallback else ""),
     }

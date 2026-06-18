@@ -19,9 +19,22 @@
     .muted { color: #666; }
     .oracle-text { white-space: pre-wrap; }
     .pagination { display: flex; gap: 1rem; margin-top: 1.5rem; }
+    .language-toggle { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .language-toggle strong, .language-toggle a { border: 1px solid #bbb; border-radius: 999px; padding: 0.25rem 0.6rem; text-decoration: none; }
+    .fallback-lang { border: 1px solid #bbb; border-radius: 999px; color: #666; font-size: 0.75rem; padding: 0.05rem 0.35rem; }
+    .toasts { bottom: 1rem; display: grid; gap: 0.5rem; left: 50%; position: fixed; transform: translateX(-50%); z-index: 10; }
+    .toast { animation: toast-hide 1s ease-in forwards; background: #173f2a; border-radius: 0.5rem; box-shadow: 0 0.5rem 1.5rem #0002; color: white; padding: 0.75rem 1rem; }
+    @keyframes toast-hide { 0%, 75% { opacity: 1; } 100% { opacity: 0; visibility: hidden; } }
   </style>
 </head>
 <body>
+  {% if messages %}
+    <div class="toasts">
+      {% for message in messages %}
+        <div class="toast">{{ message }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
   <main>
     <p><a href="/">Accueil</a> | <a href="/stats/queries/">Requetes custom</a> | <a href="/admin/">Admin</a></p>
     <h1>Recherche cartes</h1>
@@ -31,7 +44,15 @@
       <p><a href="/admin/login/?next=/cards/">Se connecter</a> pour ajouter des cartes a un cube.</p>
     {% endif %}
 
+    <p class="language-toggle">
+      Affichage cartes
+      {% if display_language == "en" %}<strong>EN</strong>{% else %}<a href="?{{ language_querystrings.en }}">EN</a>{% endif %}
+      {% if display_language == "fr" %}<strong>FR</strong>{% else %}<a href="?{{ language_querystrings.fr }}">FR</a>{% endif %}
+    </p>
+
     <form method="get">
+      <input type="hidden" name="display_lang" value="{{ display_language }}">
+      {% if filters.cube %}<input type="hidden" name="cube" value="{{ filters.cube }}">{% endif %}
       <label>
         Nom ou type
         <input name="q" value="{{ filters.q }}" placeholder="Lightning Bolt, Elf...">
@@ -94,6 +115,7 @@
     {% if add_card_form and add_card_form.fields.cube.queryset.exists %}
       <form method="post" action="{% url 'cards:add_selected_to_cube' %}">
         {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
         <div class="bulk-add">
           <h2>Ajout multiple</h2>
           <div class="bulk-controls">
@@ -116,15 +138,15 @@
                 <input type="checkbox" name="oracle_ids" value="{{ card.pk }}">
                 Selectionner
               </label>
-              {% with printing=card.printings.all.0 %}
+              {% with printing=card.display_printing %}
                 <div class="card-layout">
                   <div>
-                    {% if printing.image_url %}<img class="card-image" src="{{ printing.image_url }}" alt="{{ card.name }}">{% endif %}
+                    {% if printing.image_url %}<img class="card-image" src="{{ printing.image_url }}" alt="{{ card.display_name }}">{% endif %}
                   </div>
                   <div>
-                    <h2>{{ card.name }}</h2>
-                    <p class="muted">{{ card.mana_cost }} | MV {{ card.mana_value|default:"?" }} | {{ card.type_line }}</p>
-                    {% if card.oracle_text %}<p class="oracle-text">{{ card.oracle_text }}</p>{% endif %}
+                    <h2>{{ card.display_name }}{% if card.display_name_is_fallback %} <span class="fallback-lang">EN</span>{% endif %}</h2>
+                    <p class="muted">{{ card.mana_cost }} | MV {{ card.mana_value|default:"?" }}{% if card.display_type_line %} | {{ card.display_type_line }}{% if card.display_type_line_is_fallback %} <span class="fallback-lang">EN</span>{% endif %}{% endif %}</p>
+                    {% if card.display_oracle_text %}<p class="oracle-text">{% if card.display_oracle_text_is_fallback %}<span class="fallback-lang">EN</span> {% endif %}{{ card.display_oracle_text }}</p>{% endif %}
                     {% if printing %}
                       <p class="muted">Premier printing importe : {{ printing.set_code|upper }} #{{ printing.collector_number }} - {{ printing.rarity }}</p>
                     {% endif %}
@@ -144,15 +166,15 @@
       <section class="card-grid">
         {% for card in page.object_list %}
           <article class="card">
-            {% with printing=card.printings.all.0 %}
+            {% with printing=card.display_printing %}
               <div class="card-layout">
                 <div>
-                  {% if printing.image_url %}<img class="card-image" src="{{ printing.image_url }}" alt="{{ card.name }}">{% endif %}
+                  {% if printing.image_url %}<img class="card-image" src="{{ printing.image_url }}" alt="{{ card.display_name }}">{% endif %}
                 </div>
                 <div>
-                  <h2>{{ card.name }}</h2>
-                  <p class="muted">{{ card.mana_cost }} | MV {{ card.mana_value|default:"?" }} | {{ card.type_line }}</p>
-                  {% if card.oracle_text %}<p class="oracle-text">{{ card.oracle_text }}</p>{% endif %}
+                  <h2>{{ card.display_name }}{% if card.display_name_is_fallback %} <span class="fallback-lang">EN</span>{% endif %}</h2>
+                  <p class="muted">{{ card.mana_cost }} | MV {{ card.mana_value|default:"?" }}{% if card.display_type_line %} | {{ card.display_type_line }}{% if card.display_type_line_is_fallback %} <span class="fallback-lang">EN</span>{% endif %}{% endif %}</p>
+                  {% if card.display_oracle_text %}<p class="oracle-text">{% if card.display_oracle_text_is_fallback %}<span class="fallback-lang">EN</span> {% endif %}{{ card.display_oracle_text }}</p>{% endif %}
                   {% if printing %}
                     <p class="muted">Premier printing importe : {{ printing.set_code|upper }} #{{ printing.collector_number }} - {{ printing.rarity }}</p>
                   {% endif %}

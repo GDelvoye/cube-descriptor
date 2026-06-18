@@ -64,6 +64,9 @@ class CardPrinting(models.Model):
     image_url = models.URLField(max_length=500, blank=True)
     released_at = models.DateField(null=True, blank=True)
     lang = models.CharField(max_length=16, default="en", db_index=True)
+    printed_name = models.CharField(max_length=255, blank=True, db_index=True)
+    printed_type_line = models.CharField(max_length=255, blank=True, db_index=True)
+    printed_oracle_text = models.TextField(blank=True)
 
     class Meta:
         ordering = ["oracle__name", "-released_at", "set_code", "collector_number"]
