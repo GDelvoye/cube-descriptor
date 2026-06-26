@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}Stats - Cube MTG Analyzer{% endblock %}
+
+{% block content %}
+  <h1>Stats</h1>
+  <p>Choisissez une source. Les cubes utilisent leur liste et leurs quantites ; les extensions classiques utilisent des slots de rarete de booster.</p>
+
+  <h2>Cube utilisateur</h2>
+  {% if cubes %}
+    <form method="get">
+      <label>
+        Cube
+        <select name="cube">
+          {% for cube in cubes %}
+            <option value="{{ cube.pk }}">{{ cube.name }} - booster {{ cube.booster_size }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit">Voir les stats du cube</button>
+    </form>
+  {% else %}
+    <p>Aucun cube disponible. <a href="{% url 'cubes:create' %}">Creer un cube</a>.</p>
+  {% endif %}
+
+  <h2>Extension classique</h2>
+  {% if sets %}
+    <form method="get">
+      <label>
+        Extension
+        <select name="set">
+          {% for set in sets %}
+            <option value="{{ set.pk }}">{{ set.name }} ({{ set.code|upper }})</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit">Voir les stats de l'extension</button>
+    </form>
+  {% else %}
+    <p>Aucune extension classique importee.</p>
+  {% endif %}
+{% endblock %}

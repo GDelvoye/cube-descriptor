@@ -1,16 +1,157 @@
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
-from .forms import UserStatQueryForm
+from cards.display import apply_oracle_display, build_language_querystrings, get_display_language
+from cards.models import DEFAULT_AVAILABLE_SET_TYPES, CardOracle, CardPrinting, Set
+from cubes.models import Cube
+
+from .forms import CubeStatsForm, UserStatQueryForm
 from .models import StatQuery
+from .probabilities import probability_at_least_by_slots, probability_between_by_slots, probability_exactly_by_slots
+from .query_engine import QuerySyntaxError, build_oracle_query
+
+CLASSIC_BOOSTER_SLOTS = (
+    ("common", ("common",), 10),
+    ("uncommon", ("uncommon",), 3),
+)
+RARE_SLOT_MYTHIC_RATE = 1 / 8
+
+
+@login_required
+def stats_index(request):
+    cubes = Cube.objects.filter(owner=request.user).order_by("name")
+    sets = Set.objects.filter(set_type__in=DEFAULT_AVAILABLE_SET_TYPES).order_by("-released_at", "name")
+    cube_id = request.GET.get("cube")
+    set_id = request.GET.get("set")
+    if cube_id:
+        return redirect("cubes:stats", pk=cube_id)
+    if set_id:
+        return redirect("stats:set_stats", pk=set_id)
+    return render(request, "stats/index.html", {"cubes": cubes, "sets": sets})
+
+
+@login_required
+def set_stats(request, pk):
+    card_set = get_object_or_404(Set, pk=pk, set_type__in=DEFAULT_AVAILABLE_SET_TYPES)
+    display_language = get_display_language(request)
+    form = CubeStatsForm(request.GET or None)
+    result = None
+    error = None
+
+    printings = CardPrinting.objects.filter(set=card_set, lang="en").select_related("oracle", "set")
+    if form.is_valid():
+        try:
+            oracle_query = build_oracle_query(
+                form.cleaned_data["raw_query"], available_sets=Set.objects.filter(pk=card_set.pk)
+            )
+            matching_oracles = CardOracle.objects.filter(oracle_query).distinct()
+            matching_printings = list(printings.filter(oracle__in=matching_oracles).distinct())
+            for printing in matching_printings:
+                apply_oracle_display(printing.oracle, display_language, Set.objects.filter(pk=card_set.pk))
+
+            slots, rarity_rows = build_classic_booster_slots(printings, matching_printings)
+            minimum_hits = form.cleaned_data["minimum_hits"]
+            exact_hits = form.cleaned_data["exact_hits"]
+            between_min = form.cleaned_data["between_min"]
+            between_max = form.cleaned_data["between_max"]
+            result = {
+                "total_cards": sum(row["population"] for row in rarity_rows),
+                "matching_count": len(matching_printings),
+                "booster_size": sum(slot_sample_size(slot) for slot in slots),
+                "at_least": probability_at_least_by_slots(slots, minimum_hits),
+                "minimum_hits": minimum_hits,
+                "matching_rows": matching_printings,
+                "rarity_rows": rarity_rows,
+            }
+            result["at_least_percent"] = result["at_least"] * 100
+            if exact_hits is not None:
+                result["exact_hits"] = exact_hits
+                result["exactly"] = probability_exactly_by_slots(slots, exact_hits)
+                result["exactly_percent"] = result["exactly"] * 100
+            if between_min is not None and between_max is not None:
+                result["between_min"] = between_min
+                result["between_max"] = between_max
+                result["between"] = probability_between_by_slots(slots, between_min, between_max)
+                result["between_percent"] = result["between"] * 100
+        except QuerySyntaxError as exc:
+            error = str(exc)
+    elif request.GET:
+        error = "Formulaire invalide."
+
+    return render(
+        request,
+        "stats/set_stats.html",
+        {
+            "card_set": card_set,
+            "form": form,
+            "result": result,
+            "error": error,
+            "display_language": display_language,
+            "language_querystrings": build_language_querystrings(request),
+        },
+    )
+
+
+def build_classic_booster_slots(printings, matching_printings):
+    matching_ids_by_rarity = {}
+    for printing in matching_printings:
+        matching_ids_by_rarity.setdefault(printing.rarity, set()).add(printing.pk)
+
+    slots = []
+    rarity_rows = []
+    for label, rarities, sample_size in CLASSIC_BOOSTER_SLOTS:
+        rarity_printings = printings.filter(rarity__in=rarities)
+        population_size = rarity_printings.count()
+        if not population_size:
+            continue
+        draw_size = min(sample_size, population_size)
+        success_count = sum(len(matching_ids_by_rarity.get(rarity, set())) for rarity in rarities)
+        slots.append((population_size, success_count, draw_size))
+        rarity_rows.append(
+            {"rarity": label, "population": population_size, "matching": success_count, "draws": draw_size}
+        )
+    rare_population = printings.filter(rarity="rare").count()
+    rare_matching = len(matching_ids_by_rarity.get("rare", set()))
+    mythic_population = printings.filter(rarity="mythic").count()
+    mythic_matching = len(matching_ids_by_rarity.get("mythic", set()))
+    if rare_population or mythic_population:
+        rare_hit_rate = rare_matching / rare_population if rare_population else 0
+        mythic_hit_rate = mythic_matching / mythic_population if mythic_population else 0
+        hit_probability = (1 - RARE_SLOT_MYTHIC_RATE) * rare_hit_rate + RARE_SLOT_MYTHIC_RATE * mythic_hit_rate
+        slots.append({0: 1 - hit_probability, 1: hit_probability})
+        rarity_rows.append({"rarity": "rare", "population": rare_population, "matching": rare_matching, "draws": "7/8"})
+        rarity_rows.append(
+            {"rarity": "mythic", "population": mythic_population, "matching": mythic_matching, "draws": "1/8"}
+        )
+    return slots, rarity_rows
+
+
+def slot_sample_size(slot):
+    if isinstance(slot, dict):
+        return 1
+    return slot[2]
 
 
 @login_required
 def stat_query_list(request):
+    form = UserStatQueryForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        stat_query = form.save(commit=False)
+        stat_query.owner = request.user
+        stat_query.scope = StatQuery.Scope.USER
+        stat_query.save()
+        messages.success(request, "Requete sauvegardee.")
+        return redirect("stats:query_list")
+
     queries = StatQuery.objects.filter(owner=request.user).select_related("cube").order_by("scope", "name")
     global_queries = StatQuery.objects.filter(scope=StatQuery.Scope.GLOBAL, owner__isnull=True).order_by("name")
-    return render(request, "stats/query_list.html", {"queries": queries, "global_queries": global_queries})
+    return render(
+        request,
+        "stats/query_list.html",
+        {"form": form, "queries": queries, "global_queries": global_queries},
+    )
 
 
 @login_required

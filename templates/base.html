@@ -56,8 +56,9 @@
       <div class="nav-links">
         <a class="nav-link {% if request.resolver_match.url_name == 'home' %}is-active{% endif %}" href="{% url 'home' %}">Accueil</a>
         <a class="nav-link {% if request.resolver_match.namespace == 'cards' %}is-active{% endif %}" href="{% url 'cards:search' %}">Recherche cartes</a>
-        <a class="nav-link {% if request.resolver_match.namespace == 'cubes' %}is-active{% endif %}" href="{% url 'cubes:list' %}">Cubes</a>
-        <a class="nav-link {% if request.resolver_match.namespace == 'stats' %}is-active{% endif %}" href="{% url 'stats:query_list' %}">Requetes</a>
+        <a class="nav-link {% if request.resolver_match.namespace == 'cubes' and request.resolver_match.url_name != 'stats' %}is-active{% endif %}" href="{% url 'cubes:list' %}">Cubes</a>
+        <a class="nav-link {% if request.resolver_match.namespace == 'cubes' and request.resolver_match.url_name == 'stats' or request.resolver_match.namespace == 'stats' and request.resolver_match.url_name == 'index' or request.resolver_match.namespace == 'stats' and request.resolver_match.url_name == 'set_stats' %}is-active{% endif %}" href="{% url 'stats:index' %}">Stats</a>
+        <a class="nav-link {% if request.resolver_match.url_name == 'query_list' or request.resolver_match.url_name == 'query_create' or request.resolver_match.url_name == 'query_detail' or request.resolver_match.url_name == 'query_edit' or request.resolver_match.url_name == 'query_delete' %}is-active{% endif %}" href="{% url 'stats:query_list' %}">Requetes</a>
         {% if user.is_authenticated %}
           <a class="nav-link is-secondary" href="{% url 'admin:logout' %}">Deconnexion</a>
         {% else %}

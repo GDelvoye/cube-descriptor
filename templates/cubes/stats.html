@@ -30,13 +30,6 @@
       {% endfor %}
     </ul>
 
-    <h2>Creer une requete sauvegardee</h2>
-    <form method="post">
-      {% csrf_token %}
-      {{ stat_query_form.as_p }}
-      <button type="submit">Sauvegarder la requete</button>
-    </form>
-
     <h2>Calcul ad hoc</h2>
     <form method="get">
       <input type="hidden" name="display_lang" value="{{ display_language }}">

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}Stats {{ card_set.name }} - Cube MTG Analyzer{% endblock %}
+
+{% block extra_head %}
+  <style>
+    .language-toggle { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .language-toggle strong, .language-toggle a { border: 1px solid #bbb; border-radius: 999px; padding: 0.25rem 0.6rem; text-decoration: none; }
+    .fallback-lang { border: 1px solid #bbb; border-radius: 999px; color: #666; font-size: 0.75rem; padding: 0.05rem 0.35rem; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border-bottom: 1px solid #ddd; padding: 0.5rem; text-align: left; }
+  </style>
+{% endblock %}
+
+{% block content %}
+  <p class="page-actions"><a href="{% url 'stats:index' %}">Changer de source</a></p>
+  <h1>Stats - {{ card_set.name }} ({{ card_set.code|upper }})</h1>
+  <p>Mode extension classique : le booster est calcule par slots de rarete, pas comme un tirage uniforme dans un cube.</p>
+  <p class="language-toggle">
+    Affichage cartes
+    {% if display_language == "en" %}<strong>EN</strong>{% else %}<a href="?{{ language_querystrings.en }}">EN</a>{% endif %}
+    {% if display_language == "fr" %}<strong>FR</strong>{% else %}<a href="?{{ language_querystrings.fr }}">FR</a>{% endif %}
+  </p>
+  <p>Exemples: <code>type:Creature</code>, <code>mv&lt;=2</code>, <code>color:U AND type:Creature</code>. Le filtre <code>tag:</code> est reserve aux cubes.</p>
+
+  <h2>Calcul</h2>
+  <form method="get">
+    <input type="hidden" name="display_lang" value="{{ display_language }}">
+    {{ form.as_p }}
+    <button type="submit">Calculer</button>
+  </form>
+
+  {% if error %}<p>{{ error }}</p>{% endif %}
+
+  {% if result %}
+    <h2>Resultat</h2>
+    <p>{{ result.matching_count }} carte{{ result.matching_count|pluralize }} matchante{{ result.matching_count|pluralize }} sur {{ result.total_cards }} cartes prises en compte. Booster theorique : {{ result.booster_size }} cartes.</p>
+    <p>Probabilite d'avoir au moins {{ result.minimum_hits }} carte{{ result.minimum_hits|pluralize }} matchante{{ result.minimum_hits|pluralize }} : <strong>{{ result.at_least|floatformat:4 }}</strong> soit <strong>{{ result.at_least_percent|floatformat:2 }}%</strong></p>
+    {% if result.exactly is not None %}
+      <p>Probabilite d'avoir exactement {{ result.exact_hits }} : <strong>{{ result.exactly|floatformat:4 }}</strong> soit <strong>{{ result.exactly_percent|floatformat:2 }}%</strong></p>
+    {% endif %}
+    {% if result.between is not None %}
+      <p>Probabilite d'avoir entre {{ result.between_min }} et {{ result.between_max }} : <strong>{{ result.between|floatformat:4 }}</strong> soit <strong>{{ result.between_percent|floatformat:2 }}%</strong></p>
+    {% endif %}
+
+    <h3>Slots du booster</h3>
+    <table>
+      <thead><tr><th>Rarete</th><th>Tirees</th><th>Pool</th><th>Matchantes</th></tr></thead>
+      <tbody>
+        {% for row in result.rarity_rows %}
+          <tr><td>{{ row.rarity }}</td><td>{{ row.draws }}</td><td>{{ row.population }}</td><td>{{ row.matching }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <h3>Cartes matchantes</h3>
+    <ul>
+      {% for printing in result.matching_rows %}
+        <li>{{ printing.oracle.display_name|default:printing.oracle.name }}{% if printing.oracle.display_name_is_fallback %} <span class="fallback-lang">EN</span>{% endif %} - {{ printing.rarity }}</li>
+      {% empty %}
+        <li>Aucune carte matchante.</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+{% endblock %}

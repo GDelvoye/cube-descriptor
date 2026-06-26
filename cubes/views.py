@@ -5,7 +5,7 @@ from django.views.decorators.http import require_POST
 
 from cards.display import apply_cube_card_display, build_language_querystrings, get_display_language
 from cards.set_availability import get_available_sets
-from stats.forms import CubeStatsForm, StatQueryForm
+from stats.forms import CubeStatsForm
 from stats.models import StatQuery
 from stats.probabilities import probability_at_least, probability_between, probability_exactly
 from stats.query_engine import QuerySyntaxError, count_cube_matches
@@ -110,19 +110,8 @@ def cube_stats(request, pk):
     form = CubeStatsForm(request.GET or None)
     if initial and not request.GET.get("raw_query"):
         form = CubeStatsForm({**request.GET.dict(), **initial})
-    stat_query_form = StatQueryForm()
     result = None
     error = None
-
-    if request.method == "POST":
-        stat_query_form = StatQueryForm(request.POST)
-        if stat_query_form.is_valid():
-            stat_query = stat_query_form.save(commit=False)
-            stat_query.owner = request.user
-            if stat_query.scope == StatQuery.Scope.CUBE:
-                stat_query.cube = cube
-            stat_query.save()
-            return redirect(f"{request.path}?stat_query={stat_query.pk}&minimum_hits=1")
 
     if form.is_valid():
         try:
@@ -167,7 +156,6 @@ def cube_stats(request, pk):
         {
             "cube": cube,
             "form": form,
-            "stat_query_form": stat_query_form,
             "stat_queries": visible_queries,
             "selected_query": selected_query,
             "result": result,
