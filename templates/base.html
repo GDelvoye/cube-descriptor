@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Cube MTG Analyzer{% endblock %}</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f2ea;
+      --surface: #fffaf2;
+      --surface-strong: #221915;
+      --text: #231f20;
+      --muted: #70655d;
+      --line: #dfd2c1;
+      --accent: #7a2d20;
+      --accent-soft: #f1d7c9;
+      --shadow: 0 0.75rem 2rem #2d1d120f;
+    }
+
+    * { box-sizing: border-box; }
+    body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; line-height: 1.4; margin: 0; }
+    a { color: var(--accent); }
+    input, select, textarea, button { font: inherit; }
+    button { cursor: pointer; }
+    main { margin: 0 auto; max-width: 76rem; padding: 2rem; }
+    table { background: var(--surface); }
+
+    .site-header { background: #fffaf2; border-bottom: 1px solid var(--line); box-shadow: var(--shadow); position: sticky; top: 0; z-index: 20; }
+    .site-nav { align-items: center; display: flex; gap: 1rem; justify-content: space-between; margin: 0 auto; max-width: 76rem; padding: 0.85rem 2rem; }
+    .brand { color: var(--surface-strong); font-weight: 800; letter-spacing: -0.03em; text-decoration: none; }
+    .nav-links { display: flex; flex-wrap: wrap; gap: 0.45rem; justify-content: flex-end; }
+    .nav-link { border: 1px solid transparent; border-radius: 999px; color: var(--surface-strong); padding: 0.45rem 0.75rem; text-decoration: none; }
+    .nav-link:hover, .nav-link:focus { border-color: var(--line); background: white; }
+    .nav-link.is-active { background: var(--surface-strong); color: white; }
+    .nav-link.is-secondary { color: var(--muted); }
+    .page-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 0 0 1.25rem; }
+    .page-actions a { background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 0.4rem 0.7rem; text-decoration: none; }
+    .toasts { bottom: 1rem; display: grid; gap: 0.5rem; left: 50%; position: fixed; transform: translateX(-50%); z-index: 30; }
+    .toast { animation: toast-hide 1s ease-in forwards; background: #173f2a; border-radius: 0.5rem; box-shadow: 0 0.5rem 1.5rem #0002; color: white; padding: 0.75rem 1rem; }
+    @keyframes toast-hide { 0%, 75% { opacity: 1; } 100% { opacity: 0; visibility: hidden; } }
+
+    @media (max-width: 44rem) {
+      .site-nav { align-items: flex-start; flex-direction: column; padding: 0.8rem 1rem; }
+      .nav-links { justify-content: flex-start; }
+      .nav-link { padding: 0.38rem 0.62rem; }
+      main { padding: 1.25rem 1rem; }
+    }
+  </style>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  <header class="site-header">
+    <nav class="site-nav" aria-label="Navigation principale">
+      <a class="brand" href="{% url 'home' %}">Cube MTG Analyzer</a>
+      <div class="nav-links">
+        <a class="nav-link {% if request.resolver_match.url_name == 'home' %}is-active{% endif %}" href="{% url 'home' %}">Accueil</a>
+        <a class="nav-link {% if request.resolver_match.namespace == 'cards' %}is-active{% endif %}" href="{% url 'cards:search' %}">Recherche cartes</a>
+        <a class="nav-link {% if request.resolver_match.namespace == 'cubes' %}is-active{% endif %}" href="{% url 'cubes:list' %}">Cubes</a>
+        <a class="nav-link {% if request.resolver_match.namespace == 'stats' %}is-active{% endif %}" href="{% url 'stats:query_list' %}">Requetes</a>
+        {% if user.is_authenticated %}
+          <a class="nav-link is-secondary" href="{% url 'admin:logout' %}">Deconnexion</a>
+        {% else %}
+          <a class="nav-link is-secondary" href="{% url 'admin:login' %}?next={{ request.path }}">Connexion</a>
+        {% endif %}
+      </div>
+    </nav>
+  </header>
+
+  {% if messages %}
+    <div class="toasts">
+      {% for message in messages %}
+        <div class="toast">{{ message }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+  {% block extra_scripts %}{% endblock %}
+</body>
+</html>

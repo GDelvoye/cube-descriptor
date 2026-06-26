@@ -1,11 +1,9 @@
-<!doctype html>
-<html lang="fr">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Parametres des extensions - Cube MTG Analyzer</title>
+{% extends "base.html" %}
+
+{% block title %}Parametres des extensions - Cube MTG Analyzer{% endblock %}
+
+{% block extra_head %}
   <style>
-    body { font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }
     .lists { display: grid; gap: 1.5rem; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); }
     .panel { border: 1px solid #ddd; border-radius: 0.5rem; padding: 1rem; }
     .quick-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: end; margin-bottom: 1.5rem; }
@@ -17,10 +15,10 @@
     .muted { color: #666; }
     .set-code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight: 700; }
   </style>
-</head>
-<body>
-  <main>
-    <p><a href="{% url 'cards:search' %}">Recherche cartes</a> | <a href="/cubes/">Mes cubes</a></p>
+{% endblock %}
+
+{% block content %}
+    <p class="page-actions"><a href="{% url 'cards:search' %}">Retour a la recherche cartes</a></p>
     <h1>Parametres des extensions</h1>
     <p class="muted">Les cartes disponibles dans la recherche sont celles qui ont au moins une impression dans une extension conservee.</p>
     <p class="muted">Configuration par defaut : seules les categories core et expansion sont conservees.</p>
@@ -81,6 +79,4 @@
         </form>
       </section>
     </div>
-  </main>
-</body>
-</html>
+{% endblock %}

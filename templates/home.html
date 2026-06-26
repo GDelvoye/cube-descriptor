@@ -1,18 +1,14 @@
-<!doctype html>
-<html lang="fr">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Cube MTG Analyzer</title>
-</head>
-<body>
-  <main>
-    <h1>Cube MTG Analyzer</h1>
-    <p>Le squelette Django fonctionne.</p>
-    <p><a href="/cards/">Rechercher des cartes</a></p>
-    <p><a href="/cubes/">Mes cubes</a></p>
-    <p><a href="/stats/queries/">Requetes custom</a></p>
-    <p><a href="/admin/">Ouvrir l'administration Django</a></p>
-  </main>
-</body>
-</html>
+{% extends "base.html" %}
+
+{% block title %}Cube MTG Analyzer{% endblock %}
+
+{% block content %}
+  <h1>Cube MTG Analyzer</h1>
+  <p>Construisez vos cubes, recherchez les cartes disponibles et sauvegardez vos requetes d'analyse.</p>
+  <p class="page-actions">
+    <a href="{% url 'cards:search' %}">Rechercher des cartes</a>
+    <a href="{% url 'cubes:list' %}">Mes cubes</a>
+    <a href="{% url 'stats:query_list' %}">Requetes custom</a>
+    <a href="{% url 'admin:index' %}">Administration</a>
+  </p>
+{% endblock %}

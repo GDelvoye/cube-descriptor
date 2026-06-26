@@ -1,25 +1,18 @@
-<!doctype html>
-<html lang="fr">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Mes cubes - Cube MTG Analyzer</title>
-</head>
-<body>
-  <main>
-    <p><a href="/">Accueil</a> | <a href="/cards/">Cartes</a> | <a href="/admin/logout/">Deconnexion</a></p>
-    <h1>Mes cubes</h1>
-    <p><a href="{% url 'cubes:create' %}">Creer un cube</a></p>
-    <ul>
-      {% for cube in cubes %}
-        <li>
-          <a href="{% url 'cubes:detail' cube.pk %}">{{ cube.name }}</a>
-          - {{ cube.card_total|default:0 }} cartes - booster {{ cube.booster_size }}
-        </li>
-      {% empty %}
-        <li>Aucun cube pour le moment.</li>
-      {% endfor %}
-    </ul>
-  </main>
-</body>
-</html>
+{% extends "base.html" %}
+
+{% block title %}Mes cubes - Cube MTG Analyzer{% endblock %}
+
+{% block content %}
+  <h1>Mes cubes</h1>
+  <p class="page-actions"><a href="{% url 'cubes:create' %}">Creer un cube</a></p>
+  <ul>
+    {% for cube in cubes %}
+      <li>
+        <a href="{% url 'cubes:detail' cube.pk %}">{{ cube.name }}</a>
+        - {{ cube.card_total|default:0 }} cartes - booster {{ cube.booster_size }}
+      </li>
+    {% empty %}
+      <li>Aucun cube pour le moment.</li>
+    {% endfor %}
+  </ul>
+{% endblock %}

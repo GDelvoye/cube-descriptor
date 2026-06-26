@@ -1,22 +1,19 @@
-<!doctype html>
-<html lang="fr">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ stat_query.name }} - Cube MTG Analyzer</title>
-</head>
-<body>
-  <main>
-    <p><a href="{% url 'stats:query_list' %}">Toutes les requetes</a> | <a href="/cards/?stat_query={{ stat_query.pk }}">Utiliser dans la recherche cartes</a></p>
-    <h1>{{ stat_query.name }}</h1>
-    <p><code>{{ stat_query.raw_query }}</code></p>
-    {% if stat_query.description %}<p>{{ stat_query.description }}</p>{% endif %}
-    <p>Scope : {{ stat_query.scope }}{% if stat_query.cube %} / {{ stat_query.cube.name }}{% endif %}</p>
-    <p><a href="{% url 'stats:query_edit' stat_query.pk %}">Modifier</a></p>
-    <form method="post" action="{% url 'stats:query_delete' stat_query.pk %}">
-      {% csrf_token %}
-      <button type="submit">Supprimer</button>
-    </form>
-  </main>
-</body>
-</html>
+{% extends "base.html" %}
+
+{% block title %}{{ stat_query.name }} - Cube MTG Analyzer{% endblock %}
+
+{% block content %}
+  <p class="page-actions">
+    <a href="{% url 'stats:query_list' %}">Toutes les requetes</a>
+    <a href="{% url 'cards:search' %}?stat_query={{ stat_query.pk }}">Utiliser dans la recherche cartes</a>
+  </p>
+  <h1>{{ stat_query.name }}</h1>
+  <p><code>{{ stat_query.raw_query }}</code></p>
+  {% if stat_query.description %}<p>{{ stat_query.description }}</p>{% endif %}
+  <p>Scope : {{ stat_query.scope }}{% if stat_query.cube %} / {{ stat_query.cube.name }}{% endif %}</p>
+  <p><a href="{% url 'stats:query_edit' stat_query.pk %}">Modifier</a></p>
+  <form method="post" action="{% url 'stats:query_delete' stat_query.pk %}">
+    {% csrf_token %}
+    <button type="submit">Supprimer</button>
+  </form>
+{% endblock %}

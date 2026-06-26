@@ -1,19 +1,17 @@
-<!doctype html>
-<html lang="fr">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Stats {{ cube.name }} - Cube MTG Analyzer</title>
+{% extends "base.html" %}
+
+{% block title %}Stats {{ cube.name }} - Cube MTG Analyzer{% endblock %}
+
+{% block extra_head %}
   <style>
-    body { font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }
     .language-toggle { display: flex; gap: 0.5rem; flex-wrap: wrap; }
     .language-toggle strong, .language-toggle a { border: 1px solid #bbb; border-radius: 999px; padding: 0.25rem 0.6rem; text-decoration: none; }
     .fallback-lang { border: 1px solid #bbb; border-radius: 999px; color: #666; font-size: 0.75rem; padding: 0.05rem 0.35rem; }
   </style>
-</head>
-<body>
-  <main>
-    <p><a href="{% url 'cubes:detail' cube.pk %}">Retour au cube</a> | <a href="/cards/">Cartes</a> | <a href="/stats/queries/">Requetes custom</a></p>
+{% endblock %}
+
+{% block content %}
+    <p class="page-actions"><a href="{% url 'cubes:detail' cube.pk %}">Retour au cube</a></p>
     <h1>Stats - {{ cube.name }}</h1>
     <p>{{ total_cards }} cartes dans le cube | booster {{ cube.booster_size }}</p>
     <p class="language-toggle">
@@ -69,6 +67,4 @@
         {% endfor %}
       </ul>
     {% endif %}
-  </main>
-</body>
-</html>
+{% endblock %}

@@ -1,15 +1,10 @@
-<!doctype html>
-<html lang="fr">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Requetes custom - Cube MTG Analyzer</title>
-</head>
-<body>
-  <main>
-    <p><a href="/">Accueil</a> | <a href="/cards/">Cartes</a> | <a href="/cubes/">Mes cubes</a></p>
+{% extends "base.html" %}
+
+{% block title %}Requetes custom - Cube MTG Analyzer{% endblock %}
+
+{% block content %}
     <h1>Requetes custom</h1>
-    <p><a href="{% url 'stats:query_create' %}">Creer une requete utilisateur</a></p>
+    <p class="page-actions"><a href="{% url 'stats:query_create' %}">Creer une requete utilisateur</a></p>
 
     <h2>Mes requetes</h2>
     <ul>
@@ -32,6 +27,4 @@
         <li>Aucune requete globale.</li>
       {% endfor %}
     </ul>
-  </main>
-</body>
-</html>
+{% endblock %}

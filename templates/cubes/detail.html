@@ -1,11 +1,9 @@
-<!doctype html>
-<html lang="fr">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ cube.name }} - Cube MTG Analyzer</title>
+{% extends "base.html" %}
+
+{% block title %}{{ cube.name }} - Cube MTG Analyzer{% endblock %}
+
+{% block extra_head %}
   <style>
-    body { font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }
     table { border-collapse: collapse; width: 100%; }
     th, td { border-bottom: 1px solid #ddd; padding: 0.5rem; text-align: left; vertical-align: top; }
     input, textarea, button { font: inherit; }
@@ -19,10 +17,10 @@
     .language-toggle strong, .language-toggle a { border: 1px solid #bbb; border-radius: 999px; padding: 0.25rem 0.6rem; text-decoration: none; }
     .fallback-lang { border: 1px solid #bbb; border-radius: 999px; color: #666; font-size: 0.75rem; padding: 0.05rem 0.35rem; }
   </style>
-</head>
-<body>
-  <main>
-    <p><a href="{% url 'cubes:list' %}">Mes cubes</a> | <a href="/cards/?cube={{ cube.pk }}">Ajouter des cartes</a> | <a href="/stats/queries/">Requetes custom</a></p>
+{% endblock %}
+
+{% block content %}
+    <p class="page-actions"><a href="{% url 'cards:search' %}?cube={{ cube.pk }}">Ajouter des cartes</a></p>
     <h1>{{ cube.name }}</h1>
     {% if cube.description %}<p>{{ cube.description }}</p>{% endif %}
     <p>{{ total_cards }} cartes | booster {{ cube.booster_size }} | {{ cube.visibility }}</p>
@@ -105,7 +103,9 @@
         {% endfor %}
       </tbody>
     </table>
-  </main>
+{% endblock %}
+
+{% block extra_scripts %}
   <script>
     const cubeStatQuerySelect = document.getElementById("cube-stat-query-select");
     const cubeRawQueryInput = document.getElementById("cube-raw-query-input");
@@ -116,5 +116,4 @@
       });
     }
   </script>
-</body>
-</html>
+{% endblock %}

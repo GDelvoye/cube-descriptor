@@ -1,11 +1,9 @@
-<!doctype html>
-<html lang="fr">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Recherche cartes - Cube MTG Analyzer</title>
+{% extends "base.html" %}
+
+{% block title %}Recherche cartes - Cube MTG Analyzer{% endblock %}
+
+{% block extra_head %}
   <style>
-    body { font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }
     form { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); margin-bottom: 1.5rem; }
     label { display: grid; gap: 0.25rem; font-weight: 600; }
     input, select, button { font: inherit; padding: 0.45rem; }
@@ -22,26 +20,15 @@
     .language-toggle { display: flex; gap: 0.5rem; flex-wrap: wrap; }
     .language-toggle strong, .language-toggle a { border: 1px solid #bbb; border-radius: 999px; padding: 0.25rem 0.6rem; text-decoration: none; }
     .fallback-lang { border: 1px solid #bbb; border-radius: 999px; color: #666; font-size: 0.75rem; padding: 0.05rem 0.35rem; }
-    .toasts { bottom: 1rem; display: grid; gap: 0.5rem; left: 50%; position: fixed; transform: translateX(-50%); z-index: 10; }
-    .toast { animation: toast-hide 1s ease-in forwards; background: #173f2a; border-radius: 0.5rem; box-shadow: 0 0.5rem 1.5rem #0002; color: white; padding: 0.75rem 1rem; }
-    @keyframes toast-hide { 0%, 75% { opacity: 1; } 100% { opacity: 0; visibility: hidden; } }
   </style>
-</head>
-<body>
-  {% if messages %}
-    <div class="toasts">
-      {% for message in messages %}
-        <div class="toast">{{ message }}</div>
-      {% endfor %}
-    </div>
-  {% endif %}
-  <main>
-    <p><a href="/">Accueil</a> | <a href="/stats/queries/">Requetes custom</a> | <a href="/admin/">Admin</a></p>
+{% endblock %}
+
+{% block content %}
     <h1>Recherche cartes</h1>
     {% if user.is_authenticated %}
-      <p><a href="/cubes/">Mes cubes</a> | <a href="{% url 'cards:set_preferences' %}">Parametres des extensions</a></p>
+      <p class="page-actions"><a href="{% url 'cards:set_preferences' %}">Parametres des extensions</a></p>
     {% else %}
-      <p><a href="/admin/login/?next=/cards/">Se connecter</a> pour ajouter des cartes a un cube.</p>
+      <p><a href="{% url 'admin:login' %}?next={% url 'cards:search' %}">Se connecter</a> pour ajouter des cartes a un cube.</p>
     {% endif %}
 
     <p class="language-toggle">
@@ -161,7 +148,7 @@
       </form>
     {% else %}
       {% if user.is_authenticated %}
-        <p><a href="/cubes/new/">Creer un cube</a> pour ajouter des cartes.</p>
+        <p><a href="{% url 'cubes:create' %}">Creer un cube</a> pour ajouter des cartes.</p>
       {% endif %}
       <section class="card-grid">
         {% for card in page.object_list %}
@@ -197,7 +184,9 @@
         <a href="?{{ querystring }}{% if querystring %}&{% endif %}page={{ page.next_page_number }}">Page suivante</a>
       {% endif %}
     </nav>
-  </main>
+{% endblock %}
+
+{% block extra_scripts %}
   <script>
     const statQuerySelect = document.getElementById("stat-query-select");
     const rawQueryInput = document.getElementById("raw-query-input");
@@ -208,5 +197,4 @@
       });
     }
   </script>
-</body>
-</html>
+{% endblock %}
