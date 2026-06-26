@@ -11,12 +11,7 @@ from .forms import CubeStatsForm, UserStatQueryForm
 from .models import StatQuery
 from .probabilities import probability_at_least_by_slots, probability_between_by_slots, probability_exactly_by_slots
 from .query_engine import QuerySyntaxError, build_oracle_query
-
-CLASSIC_BOOSTER_SLOTS = (
-    ("common", ("common",), 10),
-    ("uncommon", ("uncommon",), 3),
-)
-RARE_SLOT_MYTHIC_RATE = 1 / 8
+from .set_indicators import build_booster_slots, build_set_indicators
 
 
 @login_required
@@ -41,6 +36,8 @@ def set_stats(request, pk):
     error = None
 
     printings = CardPrinting.objects.filter(set=card_set, lang="en").select_related("oracle", "set")
+    printings_list = list(printings)
+    indicators = build_set_indicators(printings_list)
     if form.is_valid():
         try:
             oracle_query = build_oracle_query(
@@ -51,7 +48,7 @@ def set_stats(request, pk):
             for printing in matching_printings:
                 apply_oracle_display(printing.oracle, display_language, Set.objects.filter(pk=card_set.pk))
 
-            slots, rarity_rows = build_classic_booster_slots(printings, matching_printings)
+            slots, rarity_rows = build_booster_slots(printings, matching_printings)
             minimum_hits = form.cleaned_data["minimum_hits"]
             exact_hits = form.cleaned_data["exact_hits"]
             between_min = form.cleaned_data["between_min"]
@@ -88,44 +85,11 @@ def set_stats(request, pk):
             "form": form,
             "result": result,
             "error": error,
+            "indicators": indicators,
             "display_language": display_language,
             "language_querystrings": build_language_querystrings(request),
         },
     )
-
-
-def build_classic_booster_slots(printings, matching_printings):
-    matching_ids_by_rarity = {}
-    for printing in matching_printings:
-        matching_ids_by_rarity.setdefault(printing.rarity, set()).add(printing.pk)
-
-    slots = []
-    rarity_rows = []
-    for label, rarities, sample_size in CLASSIC_BOOSTER_SLOTS:
-        rarity_printings = printings.filter(rarity__in=rarities)
-        population_size = rarity_printings.count()
-        if not population_size:
-            continue
-        draw_size = min(sample_size, population_size)
-        success_count = sum(len(matching_ids_by_rarity.get(rarity, set())) for rarity in rarities)
-        slots.append((population_size, success_count, draw_size))
-        rarity_rows.append(
-            {"rarity": label, "population": population_size, "matching": success_count, "draws": draw_size}
-        )
-    rare_population = printings.filter(rarity="rare").count()
-    rare_matching = len(matching_ids_by_rarity.get("rare", set()))
-    mythic_population = printings.filter(rarity="mythic").count()
-    mythic_matching = len(matching_ids_by_rarity.get("mythic", set()))
-    if rare_population or mythic_population:
-        rare_hit_rate = rare_matching / rare_population if rare_population else 0
-        mythic_hit_rate = mythic_matching / mythic_population if mythic_population else 0
-        hit_probability = (1 - RARE_SLOT_MYTHIC_RATE) * rare_hit_rate + RARE_SLOT_MYTHIC_RATE * mythic_hit_rate
-        slots.append({0: 1 - hit_probability, 1: hit_probability})
-        rarity_rows.append({"rarity": "rare", "population": rare_population, "matching": rare_matching, "draws": "7/8"})
-        rarity_rows.append(
-            {"rarity": "mythic", "population": mythic_population, "matching": mythic_matching, "draws": "1/8"}
-        )
-    return slots, rarity_rows
 
 
 def slot_sample_size(slot):

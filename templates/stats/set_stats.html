@@ -9,6 +9,11 @@
     .fallback-lang { border: 1px solid #bbb; border-radius: 999px; color: #666; font-size: 0.75rem; padding: 0.05rem 0.35rem; }
     table { border-collapse: collapse; width: 100%; }
     th, td { border-bottom: 1px solid #ddd; padding: 0.5rem; text-align: left; }
+    .indicator-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); }
+    .indicator-card { background: var(--surface); border: 1px solid var(--line); border-radius: 0.75rem; padding: 1rem; }
+    .indicator-card h3 { margin-top: 0; }
+    .indicator-value { font-size: 1.8rem; font-weight: 800; margin: 0.4rem 0; }
+    .indicator-detail summary { cursor: pointer; }
   </style>
 {% endblock %}
 
@@ -22,6 +27,29 @@
     {% if display_language == "fr" %}<strong>FR</strong>{% else %}<a href="?{{ language_querystrings.fr }}">FR</a>{% endif %}
   </p>
   <p>Exemples: <code>type:Creature</code>, <code>mv&lt;=2</code>, <code>color:U AND type:Creature</code>. Le filtre <code>tag:</code> est reserve aux cubes.</p>
+
+  <h2>Indicateurs du booster</h2>
+  <p>Esperance moyenne d'obtenir chaque type de carte dans un booster, selon le profil de rarete infere pour cette extension.</p>
+  <section class="indicator-grid">
+    {% for indicator in indicators %}
+      <article class="indicator-card">
+        <h3>{{ indicator.label }}</h3>
+        <p class="indicator-value">{{ indicator.expected|floatformat:2 }}</p>
+        <p>{{ indicator.description }} - {{ indicator.matching_count }} carte{{ indicator.matching_count|pluralize }} dans le set.</p>
+        <details class="indicator-detail">
+          <summary>Detail par rarete</summary>
+          <table>
+            <thead><tr><th>Rarete</th><th>Tirees</th><th>Pool</th><th>Matchantes</th><th>EV</th></tr></thead>
+            <tbody>
+              {% for row in indicator.detail_rows %}
+                <tr><td>{{ row.rarity }}</td><td>{{ row.draws }}</td><td>{{ row.population }}</td><td>{{ row.matching }}</td><td>{{ row.expected|floatformat:2 }}</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </details>
+      </article>
+    {% endfor %}
+  </section>
 
   <h2>Calcul</h2>
   <form method="get">

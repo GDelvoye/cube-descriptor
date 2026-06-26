@@ -1,0 +1,192 @@
+from dataclasses import dataclass
+from decimal import Decimal
+
+RARE_SLOT_MYTHIC_RATE = 1 / 8
+REMOVAL_TERMS = ("destroy", "exile", "damage", "-x/-x", "deals", "sacrifice")
+
+
+@dataclass(frozen=True)
+class BoosterSlot:
+    label: str
+    rarities: tuple[str, ...]
+    draws: float
+    display_draws: str
+
+
+@dataclass(frozen=True)
+class SetIndicator:
+    key: str
+    label: str
+    description: str
+    matcher: object
+
+
+SET_INDICATORS = (
+    SetIndicator("creatures", "Creatures", "Toutes les creatures", lambda oracle: has_type(oracle, "creature")),
+    SetIndicator("lands", "Terrains", "Toutes les cartes de terrain", lambda oracle: has_type(oracle, "land")),
+    SetIndicator("artifacts", "Artefacts", "Toutes les cartes d'artefact", lambda oracle: has_type(oracle, "artifact")),
+    SetIndicator(
+        "enchantments",
+        "Enchantements",
+        "Toutes les cartes d'enchantement",
+        lambda oracle: has_type(oracle, "enchantment"),
+    ),
+    SetIndicator("instants", "Ephemeres", "Toutes les cartes d'ephemere", lambda oracle: has_type(oracle, "instant")),
+    SetIndicator("sorceries", "Rituels", "Toutes les cartes de rituel", lambda oracle: has_type(oracle, "sorcery")),
+    SetIndicator(
+        "planeswalkers", "Planeswalkers", "Tous les planeswalkers", lambda oracle: has_type(oracle, "planeswalker")
+    ),
+    SetIndicator("bicolor", "Bicolores", "Cartes exactement bicolores", lambda oracle: len(oracle.colors or []) == 2),
+    SetIndicator(
+        "multicolor", "Multicolores", "Cartes avec au moins deux couleurs", lambda oracle: len(oracle.colors or []) >= 2
+    ),
+    SetIndicator("colorless", "Incolores", "Cartes sans couleur", lambda oracle: len(oracle.colors or []) == 0),
+    SetIndicator(
+        "flying_creatures",
+        "Creatures volantes",
+        "Creatures avec la capacite vol",
+        lambda oracle: has_type(oracle, "creature") and has_keyword(oracle, "flying"),
+    ),
+    SetIndicator("removal", "Removal", "Cartes qui retirent ou gerent une menace", lambda oracle: is_removal(oracle)),
+    SetIndicator(
+        "fixing", "Fixing", "Cartes qui aident a produire ou chercher du mana", lambda oracle: is_fixing(oracle)
+    ),
+    SetIndicator("cheap", "MV <= 2", "Cartes avec mana value 2 ou moins", lambda oracle: compare_mv(oracle, "lte", 2)),
+    SetIndicator(
+        "expensive", "MV >= 6", "Cartes avec mana value 6 ou plus", lambda oracle: compare_mv(oracle, "gte", 6)
+    ),
+)
+
+
+def infer_booster_profile(printings):
+    has_mythics = has_rarity(printings, "mythic")
+    common_draws = 10 if has_mythics else 11
+    slots = [
+        BoosterSlot("common", ("common",), common_draws, str(common_draws)),
+        BoosterSlot("uncommon", ("uncommon",), 3, "3"),
+    ]
+    if has_mythics:
+        slots.extend(
+            [
+                BoosterSlot("rare", ("rare",), 1 - RARE_SLOT_MYTHIC_RATE, "7/8"),
+                BoosterSlot("mythic", ("mythic",), RARE_SLOT_MYTHIC_RATE, "1/8"),
+            ]
+        )
+    else:
+        slots.append(BoosterSlot("rare", ("rare",), 1, "1"))
+    return slots
+
+
+def build_booster_slots(printings, matching_printings):
+    matching_ids_by_rarity = group_matching_ids_by_rarity(matching_printings)
+    slots = []
+    rarity_rows = []
+    alternate_hit_probability = 0
+    has_alternate_slot = False
+    for profile_slot in infer_booster_profile(printings):
+        rarity_printings = printings.filter(rarity__in=profile_slot.rarities)
+        population_size = rarity_printings.count()
+        if not population_size:
+            continue
+        if profile_slot.draws < 1:
+            has_alternate_slot = True
+            success_count = sum(len(matching_ids_by_rarity.get(rarity, set())) for rarity in profile_slot.rarities)
+            hit_rate = success_count / population_size if population_size else 0
+            alternate_hit_probability += profile_slot.draws * hit_rate
+        else:
+            draw_size = min(int(profile_slot.draws), population_size)
+            success_count = sum(len(matching_ids_by_rarity.get(rarity, set())) for rarity in profile_slot.rarities)
+            slots.append((population_size, success_count, draw_size))
+        rarity_rows.append(
+            {
+                "rarity": profile_slot.label,
+                "population": population_size,
+                "matching": sum(len(matching_ids_by_rarity.get(rarity, set())) for rarity in profile_slot.rarities),
+                "draws": profile_slot.display_draws,
+            }
+        )
+    if has_alternate_slot:
+        slots.append({0: 1 - alternate_hit_probability, 1: alternate_hit_probability})
+    return slots, rarity_rows
+
+
+def build_set_indicators(printings):
+    profile = infer_booster_profile(printings)
+    return [build_indicator_row(printings, profile, indicator) for indicator in SET_INDICATORS]
+
+
+def build_indicator_row(printings, profile, indicator):
+    matching_printings = [printing for printing in printings if indicator.matcher(printing.oracle)]
+    matching_ids_by_rarity = group_matching_ids_by_rarity(matching_printings)
+    detail_rows = []
+    expected = 0
+    for slot in profile:
+        rarity_printings = [printing for printing in printings if printing.rarity in slot.rarities]
+        population = len(rarity_printings)
+        matching = sum(len(matching_ids_by_rarity.get(rarity, set())) for rarity in slot.rarities)
+        rate = matching / population if population else 0
+        contribution = slot.draws * rate
+        expected += contribution
+        detail_rows.append(
+            {
+                "rarity": slot.label,
+                "draws": slot.display_draws,
+                "population": population,
+                "matching": matching,
+                "expected": contribution,
+            }
+        )
+    return {
+        "key": indicator.key,
+        "label": indicator.label,
+        "description": indicator.description,
+        "matching_count": len(matching_printings),
+        "expected": expected,
+        "detail_rows": detail_rows,
+    }
+
+
+def group_matching_ids_by_rarity(printings):
+    matching_ids_by_rarity = {}
+    for printing in printings:
+        matching_ids_by_rarity.setdefault(printing.rarity, set()).add(printing.pk)
+    return matching_ids_by_rarity
+
+
+def has_rarity(printings, rarity):
+    if hasattr(printings, "filter"):
+        return printings.filter(rarity=rarity).exists()
+    return any(printing.rarity == rarity for printing in printings)
+
+
+def has_type(oracle, card_type):
+    return card_type in (oracle.type_line or "").lower()
+
+
+def has_keyword(oracle, keyword):
+    return keyword.lower() in [card_keyword.lower() for card_keyword in oracle.keywords or []]
+
+
+def compare_mv(oracle, operator, value):
+    if oracle.mana_value is None:
+        return False
+    mana_value = Decimal(oracle.mana_value)
+    if operator == "lte":
+        return mana_value <= value
+    return mana_value >= value
+
+
+def is_removal(oracle):
+    text = (oracle.oracle_text or "").lower()
+    return any(term in text for term in REMOVAL_TERMS)
+
+
+def is_fixing(oracle):
+    text = (oracle.oracle_text or "").lower()
+    if has_type(oracle, "land") and (
+        "add" in text or any(color in text for color in ("{w}", "{u}", "{b}", "{r}", "{g}"))
+    ):
+        return True
+    if has_type(oracle, "artifact") and "add" in text and "mana" in text:
+        return True
+    return "search your library" in text and ("land" in text or "basic" in text)

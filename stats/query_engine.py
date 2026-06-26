@@ -3,7 +3,8 @@ from decimal import Decimal, InvalidOperation
 
 from django.db.models import Q
 
-TOKEN_RE = re.compile(r"\s+AND\s+", re.IGNORECASE)
+AND_RE = re.compile(r"\s+AND\s+", re.IGNORECASE)
+OR_RE = re.compile(r"\s+OR\s+", re.IGNORECASE)
 TERM_RE = re.compile(r'^(?P<field>color|identity|type|text|tag|keyword|name):(?P<value>"[^"]+"|\S+)$', re.IGNORECASE)
 NUMERIC_RE = re.compile(
     r"^(?P<field>mv|power|toughness)\s*(?P<op><=|>=|=|<|>)\s*(?P<value>\d+(?:\.\d+)?)$", re.IGNORECASE
@@ -36,11 +37,11 @@ def build_oracle_query(raw_query, available_sets=None):
         raise QuerySyntaxError("La requete est vide.")
 
     query = Q()
-    for token in TOKEN_RE.split(raw_query):
-        token = token.strip()
-        if not token:
-            continue
-        query &= parse_oracle_query_term(token, available_sets=available_sets)
+    for group in split_query_groups(raw_query):
+        group_query = Q()
+        for token in group:
+            group_query &= parse_oracle_query_term(token, available_sets=available_sets)
+        query |= group_query
     return query
 
 
@@ -49,15 +50,21 @@ def parse_query(raw_query, available_sets=None):
     if not raw_query:
         raise QuerySyntaxError("La requete est vide.")
 
-    matchers = []
-    for token in TOKEN_RE.split(raw_query):
-        token = token.strip()
-        if not token:
-            continue
-        matchers.append(parse_term(token, available_sets=available_sets))
-    if not matchers:
+    groups = [
+        [parse_term(token, available_sets=available_sets) for token in group] for group in split_query_groups(raw_query)
+    ]
+    if not groups:
         raise QuerySyntaxError("La requete est vide.")
-    return matchers
+    return [lambda cube_card: any(all(matcher(cube_card) for matcher in group) for group in groups)]
+
+
+def split_query_groups(raw_query):
+    groups = []
+    for raw_group in OR_RE.split(raw_query):
+        tokens = [token.strip() for token in AND_RE.split(raw_group) if token.strip()]
+        if tokens:
+            groups.append(tokens)
+    return groups
 
 
 def parse_term(token, available_sets=None):
