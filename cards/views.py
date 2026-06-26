@@ -11,7 +11,7 @@ from django.views.decorators.http import require_POST
 from cubes.forms import AddCardToCubeForm
 from cubes.models import CubeCard
 from stats.models import StatQuery
-from stats.query_engine import QuerySyntaxError, build_oracle_matchers
+from stats.query_engine import QuerySyntaxError, build_oracle_query
 
 from .display import apply_oracle_display, build_language_querystrings, get_display_language
 from .models import CardOracle, CardPrinting, Set, UserSetPreference
@@ -76,8 +76,9 @@ def card_search(request):
         queryset = queryset.filter(printings__set_code=filters["set"]).distinct()
     if filters["raw_query"]:
         try:
-            matchers = build_oracle_matchers(filters["raw_query"], available_sets=available_sets)
-            queryset = [oracle for oracle in queryset if all(matcher(oracle) for matcher in matchers)]
+            queryset = queryset.filter(
+                build_oracle_query(filters["raw_query"], available_sets=available_sets)
+            ).distinct()
         except QuerySyntaxError as exc:
             filters["raw_query_error"] = str(exc)
 

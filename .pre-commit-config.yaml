@@ -17,7 +17,7 @@ repos:
 
       - id: django-tests
         name: django tests
-        entry: bash -lc 'uv run python manage.py test'
+        entry: bash -lc 'DATABASE_URL=postgres://cube:cube@localhost:5432/cube uv run python manage.py test'
         language: system
         pass_filenames: false
         always_run: true

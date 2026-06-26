@@ -122,6 +122,36 @@ class CardLocalizationTests(TestCase):
         self.assertEqual(count_cube_matches([cube_card], "type:elan")[0], 1)
         self.assertEqual(count_cube_matches([cube_card], "text:Exilez")[0], 1)
 
+    def test_global_custom_query_uses_sql_filters_for_localized_fields(self):
+        oracle = CardOracle.objects.create(
+            scryfall_oracle_id=uuid4(),
+            name="SQL Deer",
+            type_line="Creature - Elk",
+            oracle_text="Exile another target permanent.",
+        )
+        self.create_printing(
+            oracle,
+            self.set,
+            "fr",
+            "8",
+            "Cerf SQL",
+            "Creature : elan",
+            "Exilez un permanent cible.",
+            "sql-deer",
+        )
+
+        response = self.client.get("/cards/", {"raw_query": "name:SQL AND type:elan AND text:Exilez"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["total_count"], 1)
+        self.assertContains(response, "SQL Deer")
+
+    def test_global_custom_query_rejects_cube_tags(self):
+        response = self.client.get("/cards/", {"raw_query": "tag:removal"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Le filtre tag: est disponible dans les cubes")
+
     def test_add_selected_redirects_back_to_search_and_shows_toast(self):
         user = self.create_user()
         cube = Cube.objects.create(owner=user, name="Toast Cube")

@@ -1,6 +1,8 @@
 import re
 from decimal import Decimal, InvalidOperation
 
+from django.db.models import Q
+
 TOKEN_RE = re.compile(r"\s+AND\s+", re.IGNORECASE)
 TERM_RE = re.compile(r'^(?P<field>color|identity|type|text|tag|keyword|name):(?P<value>"[^"]+"|\S+)$', re.IGNORECASE)
 NUMERIC_RE = re.compile(
@@ -26,6 +28,20 @@ def count_cube_matches(cube_cards, raw_query, available_sets=None):
 def build_oracle_matchers(raw_query, available_sets=None):
     cube_card_matchers = parse_query(raw_query, available_sets=available_sets)
     return [lambda oracle, matcher=matcher: matcher(OracleProxy(oracle)) for matcher in cube_card_matchers]
+
+
+def build_oracle_query(raw_query, available_sets=None):
+    raw_query = raw_query.strip()
+    if not raw_query:
+        raise QuerySyntaxError("La requete est vide.")
+
+    query = Q()
+    for token in TOKEN_RE.split(raw_query):
+        token = token.strip()
+        if not token:
+            continue
+        query &= parse_oracle_query_term(token, available_sets=available_sets)
+    return query
 
 
 def parse_query(raw_query, available_sets=None):
@@ -79,6 +95,37 @@ def parse_term(token, available_sets=None):
     raise QuerySyntaxError(f"Filtre non reconnu: {token}")
 
 
+def parse_oracle_query_term(token, available_sets=None):
+    numeric_match = NUMERIC_RE.match(token)
+    if numeric_match:
+        return numeric_oracle_query(
+            numeric_match.group("field").lower(), numeric_match.group("op"), Decimal(numeric_match.group("value"))
+        )
+
+    term_match = TERM_RE.match(token)
+    if not term_match:
+        raise QuerySyntaxError(f"Filtre non reconnu: {token}")
+
+    field = term_match.group("field").lower()
+    value = unquote(term_match.group("value"))
+    if field == "color":
+        return Q(colors__contains=[value.upper()])
+    if field == "identity":
+        return Q(color_identity__contains=[value.upper()])
+    if field == "type":
+        return localized_oracle_query(value, "type_line", "printed_type_line", available_sets)
+    if field == "text":
+        return localized_oracle_query(value, "oracle_text", "printed_oracle_text", available_sets)
+    if field == "keyword":
+        return Q(keywords__contains=[value])
+    if field == "name":
+        return localized_oracle_query(value, "name", "printed_name", available_sets)
+    if field == "tag":
+        raise QuerySyntaxError("Le filtre tag: est disponible dans les cubes, pas dans la recherche globale.")
+
+    raise QuerySyntaxError(f"Filtre non reconnu: {token}")
+
+
 def numeric_matcher(field, operator, expected):
     def matcher(cube_card):
         try:
@@ -96,6 +143,31 @@ def numeric_matcher(field, operator, expected):
         return actual == expected
 
     return matcher
+
+
+def numeric_oracle_query(field, operator, expected):
+    if field == "mv":
+        lookup_field = "mana_value"
+    elif field in {"power", "toughness"}:
+        lookup_field = field
+    else:
+        raise QuerySyntaxError(f"Filtre non reconnu: {field}")
+
+    lookup_suffix = {
+        "=": "",
+        "<": "__lt",
+        ">": "__gt",
+        "<=": "__lte",
+        ">=": "__gte",
+    }[operator]
+    return Q(**{f"{lookup_field}{lookup_suffix}": expected})
+
+
+def localized_oracle_query(value, oracle_field, printing_field, available_sets=None):
+    printing_filter = {f"printings__{printing_field}__icontains": value}
+    if available_sets is not None:
+        printing_filter["printings__set__in"] = available_sets
+    return Q(**{f"{oracle_field}__icontains": value}) | Q(**printing_filter)
 
 
 def localized_contains(cube_card, value, oracle_fields, printing_fields, available_sets=None):
