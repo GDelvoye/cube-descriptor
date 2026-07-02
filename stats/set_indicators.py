@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
+from cards.models import DEFAULT_AVAILABLE_SET_TYPES, CardPrinting
+
 RARE_SLOT_MYTHIC_RATE = 1 / 8
 REMOVAL_TERMS = ("destroy", "exile", "damage", "-x/-x", "deals", "sacrifice")
 
@@ -115,6 +117,87 @@ def build_set_indicators(printings):
     return [build_indicator_row(printings, profile, indicator) for indicator in SET_INDICATORS]
 
 
+def build_set_indicator_benchmarks(printings_by_set, indicators=None):
+    indicators = indicators or SET_INDICATORS
+    expected_values_by_key = {indicator.key: [] for indicator in indicators}
+
+    for printings in printings_by_set:
+        if not printings:
+            continue
+        profile = infer_booster_profile(printings)
+        for indicator in indicators:
+            expected_values_by_key[indicator.key].append(calculate_expected_value(printings, profile, indicator))
+
+    return {key: build_boxplot(values) for key, values in expected_values_by_key.items()}
+
+
+def get_official_set_printings():
+    printings = (
+        CardPrinting.objects.filter(set__set_type__in=DEFAULT_AVAILABLE_SET_TYPES, lang="en")
+        .select_related("oracle", "set")
+        .order_by("set_id")
+    )
+    printings_by_set = []
+    current_set_id = None
+    current_printings = []
+    for printing in printings:
+        if current_set_id is not None and printing.set_id != current_set_id:
+            printings_by_set.append(current_printings)
+            current_printings = []
+        current_set_id = printing.set_id
+        current_printings.append(printing)
+    if current_printings:
+        printings_by_set.append(current_printings)
+    return printings_by_set
+
+
+def build_indicator_options(selected_stat_keys):
+    selected_stat_keys = set(selected_stat_keys)
+    return [
+        {
+            "key": indicator.key,
+            "label": indicator.label,
+            "selected": indicator.key in selected_stat_keys,
+        }
+        for indicator in SET_INDICATORS
+    ]
+
+
+def get_selected_indicator_keys(request):
+    selected_stat_keys = request.GET.getlist("stats")
+    available_stat_keys = {indicator.key for indicator in SET_INDICATORS}
+    if not selected_stat_keys and "stats_filter" not in request.GET:
+        selected_stat_keys = [indicator.key for indicator in SET_INDICATORS]
+    return [key for key in selected_stat_keys if key in available_stat_keys]
+
+
+def attach_benchmarks(indicators, benchmarks):
+    for indicator in indicators:
+        benchmark = benchmarks.get(indicator["key"])
+        indicator["benchmark"] = benchmark
+        if benchmark:
+            indicator["marker_position"] = scale_boxplot_value(indicator["expected"], benchmark["d1"], benchmark["d9"])
+    return indicators
+
+
+def build_cube_indicators(cube_cards, booster_size):
+    total_cards = sum(cube_card.quantity for cube_card in cube_cards)
+    rows = []
+    for indicator in SET_INDICATORS:
+        matching_count = sum(cube_card.quantity for cube_card in cube_cards if indicator.matcher(cube_card.oracle))
+        expected = booster_size * matching_count / total_cards if total_cards else 0
+        rows.append(
+            {
+                "key": indicator.key,
+                "label": indicator.label,
+                "description": indicator.description,
+                "matching_count": matching_count,
+                "expected": expected,
+            }
+        )
+    return rows
+
+
 def build_indicator_row(printings, profile, indicator):
     matching_printings = [printing for printing in printings if indicator.matcher(printing.oracle)]
     matching_ids_by_rarity = group_matching_ids_by_rarity(matching_printings)
@@ -144,6 +227,60 @@ def build_indicator_row(printings, profile, indicator):
         "expected": expected,
         "detail_rows": detail_rows,
     }
+
+
+def calculate_expected_value(printings, profile, indicator):
+    expected = 0
+    for slot in profile:
+        rarity_printings = [printing for printing in printings if printing.rarity in slot.rarities]
+        population = len(rarity_printings)
+        if not population:
+            continue
+        matching = sum(1 for printing in rarity_printings if indicator.matcher(printing.oracle))
+        expected += slot.draws * (matching / population)
+    return expected
+
+
+def build_boxplot(values):
+    if not values:
+        return None
+
+    sorted_values = sorted(values)
+    d1 = percentile(sorted_values, 0.1)
+    q1 = percentile(sorted_values, 0.25)
+    median = percentile(sorted_values, 0.5)
+    q3 = percentile(sorted_values, 0.75)
+    d9 = percentile(sorted_values, 0.9)
+    q1_position = scale_boxplot_value(q1, d1, d9)
+    q3_position = scale_boxplot_value(q3, d1, d9)
+    return {
+        "count": len(sorted_values),
+        "d1": d1,
+        "q1": q1,
+        "median": median,
+        "q3": q3,
+        "d9": d9,
+        "q1_position": q1_position,
+        "median_position": scale_boxplot_value(median, d1, d9),
+        "q3_position": q3_position,
+        "box_width": q3_position - q1_position,
+    }
+
+
+def percentile(sorted_values, ratio):
+    if len(sorted_values) == 1:
+        return sorted_values[0]
+    position = (len(sorted_values) - 1) * ratio
+    lower_index = int(position)
+    upper_index = min(lower_index + 1, len(sorted_values) - 1)
+    fraction = position - lower_index
+    return sorted_values[lower_index] + (sorted_values[upper_index] - sorted_values[lower_index]) * fraction
+
+
+def scale_boxplot_value(value, minimum, maximum):
+    if maximum == minimum:
+        return 50
+    return max(0, min(100, ((value - minimum) / (maximum - minimum)) * 100))
 
 
 def group_matching_ids_by_rarity(printings):

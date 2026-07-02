@@ -9,7 +9,7 @@ from cards.models import CardOracle, CardPrinting, Set
 from cubes.models import Cube, CubeCard
 from stats.models import StatQuery
 from stats.query_engine import build_oracle_query, count_cube_matches
-from stats.set_indicators import build_set_indicators
+from stats.set_indicators import build_set_indicator_benchmarks, build_set_indicators
 
 
 class StatsSourceTests(TestCase):
@@ -188,6 +188,61 @@ class StatsSourceTests(TestCase):
         self.assertEqual(indicators["fixing"]["matching_count"], 1)
         self.assertEqual(indicators["cheap"]["matching_count"], 2)
         self.assertEqual(indicators["expensive"]["matching_count"], 1)
+
+    def test_set_stats_filters_visible_indicators(self):
+        self.create_printing("Common Creature", "common", "Creature")
+        self.create_printing("Common Land", "common", "Land")
+
+        response = self.client.get(
+            reverse("stats:set_stats", kwargs={"pk": self.card_set.pk}),
+            {"stats_filter": "1", "stats": ["creatures"]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([indicator["key"] for indicator in response.context["indicators"]], ["creatures"])
+        self.assertContains(response, "Creatures (#1)")
+        self.assertNotContains(response, "Terrains (#1)")
+
+    def test_cube_stats_show_cube_indicators_against_set_benchmarks(self):
+        creature = self.create_printing("Cube Creature", "common", "Creature")
+        land = self.create_printing("Cube Land", "common", "Land")
+        cube = Cube.objects.create(owner=self.user, name="Indicator Cube", booster_size=2)
+        CubeCard.objects.create(cube=cube, oracle=creature.oracle, quantity=3)
+        CubeCard.objects.create(cube=cube, oracle=land.oracle, quantity=1)
+
+        response = self.client.get(
+            reverse("cubes:stats", kwargs={"pk": cube.pk}),
+            {"stats_filter": "1", "stats": ["creatures"]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([indicator["key"] for indicator in response.context["indicators"]], ["creatures"])
+        self.assertContains(response, "Creatures (#3)")
+        self.assertContains(response, "Indicator Cube: 1,50")
+        self.assertNotContains(response, "Terrains (#1)")
+
+    def test_set_indicator_benchmarks_include_deciles_and_quartiles(self):
+        old_set = Set.objects.create(code="old", name="Old", set_type="expansion")
+        mid_set = Set.objects.create(code="mid", name="Middle", set_type="expansion")
+        new_set = Set.objects.create(code="new", name="New", set_type="expansion")
+        self.create_printing("Old Creature", "common", "Creature", set_obj=old_set)
+        self.create_printing("Mid Creature", "common", "Creature", set_obj=mid_set)
+        self.create_printing("Mid Instant", "common", "Instant", set_obj=mid_set)
+        self.create_printing("New Instant", "common", "Instant", set_obj=new_set)
+
+        benchmarks = build_set_indicator_benchmarks(
+            [
+                list(CardPrinting.objects.filter(set=old_set).select_related("oracle")),
+                list(CardPrinting.objects.filter(set=mid_set).select_related("oracle")),
+                list(CardPrinting.objects.filter(set=new_set).select_related("oracle")),
+            ]
+        )
+
+        creatures = benchmarks["creatures"]
+        self.assertEqual(creatures["count"], 3)
+        self.assertAlmostEqual(creatures["d1"], 1.1)
+        self.assertAlmostEqual(creatures["median"], 5.5)
+        self.assertAlmostEqual(creatures["d9"], 9.9)
 
     def test_or_query_matches_any_clause(self):
         removal = self.create_printing("Doom Blade", "common", "Instant", oracle_text="Destroy target creature.")
@@ -373,7 +428,9 @@ class StatsSourceTests(TestCase):
         mana_value=None,
         keywords=None,
         image_url="",
+        set_obj=None,
     ):
+        set_obj = set_obj or self.card_set
         oracle = CardOracle.objects.create(
             scryfall_oracle_id=uuid4(),
             name=name,
@@ -386,8 +443,8 @@ class StatsSourceTests(TestCase):
         return CardPrinting.objects.create(
             scryfall_id=uuid4(),
             oracle=oracle,
-            set=self.card_set,
-            set_code=self.card_set.code,
+            set=set_obj,
+            set_code=set_obj.code,
             collector_number=name,
             rarity=rarity,
             lang="en",

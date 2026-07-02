@@ -10,7 +10,15 @@ from .forms import CubeStatsForm, UserStatQueryForm
 from .models import StatQuery
 from .probabilities import probability_at_least_by_slots, probability_between_by_slots, probability_exactly_by_slots
 from .query_engine import QuerySyntaxError, build_oracle_query
-from .set_indicators import build_booster_slots, build_set_indicators
+from .set_indicators import (
+    attach_benchmarks,
+    build_booster_slots,
+    build_indicator_options,
+    build_set_indicator_benchmarks,
+    build_set_indicators,
+    get_official_set_printings,
+    get_selected_indicator_keys,
+)
 
 
 @login_required
@@ -32,12 +40,15 @@ def set_stats(request, pk):
     display_language = get_display_language(request)
     form = CubeStatsForm(request.GET or None)
     visible_stat_queries = get_visible_stat_queries(request.user)
+    selected_stat_keys = get_selected_indicator_keys(request)
     result = None
     error = None
 
     printings = CardPrinting.objects.filter(set=card_set, lang="en").select_related("oracle", "set")
     printings_list = list(printings)
-    indicators = build_set_indicators(printings_list)
+    indicators = [row for row in build_set_indicators(printings_list) if row["key"] in selected_stat_keys]
+    benchmarks = build_set_indicator_benchmarks(get_official_set_printings())
+    attach_benchmarks(indicators, benchmarks)
     if form.is_valid():
         try:
             oracle_query = build_oracle_query(
@@ -88,6 +99,7 @@ def set_stats(request, pk):
             "result": result,
             "error": error,
             "indicators": indicators,
+            "indicator_options": build_indicator_options(selected_stat_keys),
             "display_language": display_language,
             "language_querystrings": build_language_querystrings(request),
         },

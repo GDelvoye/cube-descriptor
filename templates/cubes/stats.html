@@ -7,6 +7,32 @@
     .language-toggle { display: flex; gap: 0.5rem; flex-wrap: wrap; }
     .language-toggle strong, .language-toggle a { border: 1px solid #bbb; border-radius: 999px; padding: 0.25rem 0.6rem; text-decoration: none; }
     .fallback-lang { border: 1px solid #bbb; border-radius: 999px; color: #666; font-size: 0.75rem; padding: 0.05rem 0.35rem; }
+    .stats-layout { align-items: start; display: grid; gap: 1.25rem; grid-template-columns: minmax(13rem, 17rem) 1fr; }
+    .stats-sidebar { background: var(--surface); border: 1px solid var(--line); border-radius: 0.9rem; box-shadow: var(--shadow); padding: 0.85rem; position: sticky; top: 5.5rem; }
+    .stats-sidebar summary { cursor: pointer; font-weight: 800; }
+    .stats-filter { display: grid; gap: 0.45rem; margin-top: 0.85rem; }
+    .stats-filter label { align-items: center; display: flex; gap: 0.45rem; }
+    .stats-filter button { background: var(--surface-strong); border: 0; border-radius: 999px; color: white; margin-top: 0.45rem; padding: 0.45rem 0.75rem; }
+    .indicator-grid { display: grid; gap: 0.85rem; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); }
+    .indicator-card { background: var(--surface); border: 1px solid var(--line); border-radius: 0.85rem; padding: 0.75rem 0.85rem; }
+    .indicator-title { align-items: baseline; display: flex; flex-wrap: wrap; font-size: 1.05rem; font-weight: 850; gap: 0.35rem; justify-content: space-between; margin: 0 0 0.65rem; }
+    .indicator-title span:last-child { color: var(--accent); font-size: 1.25rem; }
+    .boxplot { margin-top: 0.4rem; }
+    .boxplot-track { height: 1.9rem; margin: 0.35rem 0 0.1rem; position: relative; }
+    .boxplot-line { background: var(--line); height: 0.12rem; left: 0; position: absolute; right: 0; top: 1.05rem; }
+    .boxplot-box { background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 0.25rem; height: 1.05rem; position: absolute; top: 0.55rem; }
+    .boxplot-median { background: var(--surface-strong); bottom: 0.45rem; position: absolute; top: 0.45rem; width: 0.12rem; }
+    .boxplot-marker { background: var(--accent); border: 2px solid var(--surface); border-radius: 999px; box-shadow: 0 0 0 1px var(--accent); height: 0.75rem; position: absolute; top: 0.72rem; transform: translateX(-50%); width: 0.75rem; }
+    .boxplot-anchor { background: transparent; border: 0; border-radius: 999px; height: 0.65rem; padding: 0; position: absolute; top: 0.78rem; transform: translateX(-50%); width: 0.65rem; }
+    .boxplot-anchor:first-of-type { transform: none; }
+    .boxplot-anchor:last-of-type { transform: translateX(-100%); }
+    .boxplot-anchor::after { background: var(--surface-strong); border-radius: 0.35rem; bottom: 1.25rem; color: white; content: attr(aria-label); font-size: 0.72rem; left: 50%; opacity: 0; padding: 0.25rem 0.4rem; pointer-events: none; position: absolute; transform: translateX(-50%); transition: opacity 0.12s ease; white-space: nowrap; z-index: 2; }
+    .boxplot-anchor:hover::after, .boxplot-anchor:focus::after { opacity: 1; }
+    .empty-indicators { background: var(--surface); border: 1px dashed var(--line); border-radius: 0.85rem; color: var(--muted); padding: 1rem; }
+    @media (max-width: 48rem) {
+      .stats-layout { grid-template-columns: 1fr; }
+      .stats-sidebar { position: static; }
+    }
   </style>
 {% endblock %}
 
@@ -21,6 +47,49 @@
     </p>
     <p>Exemples: <code>type:Creature</code>, <code>tag:removal</code>, <code>tag:fixing</code>, <code>mv&lt;=2</code>, <code>color:U AND type:Creature</code>.</p>
 
+    <h2>Indicateurs du booster</h2>
+    <p>Esperance moyenne d'obtenir chaque type de carte dans un booster du cube, comparee aux extensions officielles importees.</p>
+    <div class="stats-layout">
+      <aside class="stats-sidebar">
+        <details open>
+          <summary>Stats affichees</summary>
+          <form class="stats-filter" method="get">
+            <input type="hidden" name="display_lang" value="{{ display_language }}">
+            <input type="hidden" name="stats_filter" value="1">
+            {% for option in indicator_options %}
+              <label><input type="checkbox" name="stats" value="{{ option.key }}" {% if option.selected %}checked{% endif %}> {{ option.label }}</label>
+            {% endfor %}
+            <button type="submit">Appliquer</button>
+          </form>
+        </details>
+      </aside>
+
+      <section class="indicator-grid">
+        {% for indicator in indicators %}
+          <article class="indicator-card">
+            <h3 class="indicator-title"><span>{{ indicator.label }} (#{{ indicator.matching_count }})</span><span>{{ indicator.expected|floatformat:2 }}</span></h3>
+            {% if indicator.benchmark %}
+              <div class="boxplot" aria-label="Distribution historique des esperances par booster">
+                <div class="boxplot-track">
+                  <span class="boxplot-line"></span>
+                  <span class="boxplot-box" style="left: {{ indicator.benchmark.q1_position|stringformat:'f' }}%; width: {{ indicator.benchmark.box_width|stringformat:'f' }}%;"></span>
+                  <span class="boxplot-median" style="left: {{ indicator.benchmark.median_position|stringformat:'f' }}%;"></span>
+                  <span class="boxplot-marker" title="{{ cube.name }}: {{ indicator.expected|floatformat:2 }}" style="left: {{ indicator.marker_position|stringformat:'f' }}%;"></span>
+                  <button class="boxplot-anchor" type="button" aria-label="D1 {{ indicator.benchmark.d1|floatformat:2 }}" style="left: 0;"></button>
+                  <button class="boxplot-anchor" type="button" aria-label="Q1 {{ indicator.benchmark.q1|floatformat:2 }}" style="left: {{ indicator.benchmark.q1_position|stringformat:'f' }}%;"></button>
+                  <button class="boxplot-anchor" type="button" aria-label="Med {{ indicator.benchmark.median|floatformat:2 }}" style="left: {{ indicator.benchmark.median_position|stringformat:'f' }}%;"></button>
+                  <button class="boxplot-anchor" type="button" aria-label="Q3 {{ indicator.benchmark.q3|floatformat:2 }}" style="left: {{ indicator.benchmark.q3_position|stringformat:'f' }}%;"></button>
+                  <button class="boxplot-anchor" type="button" aria-label="D9 {{ indicator.benchmark.d9|floatformat:2 }}" style="left: 100%;"></button>
+                </div>
+              </div>
+            {% endif %}
+          </article>
+        {% empty %}
+          <p class="empty-indicators">Aucune statistique selectionnee.</p>
+        {% endfor %}
+      </section>
+    </div>
+
     <h2>Requetes sauvegardees</h2>
     <ul>
       {% for stat_query in stat_queries %}
@@ -33,6 +102,8 @@
     <h2>Calcul ad hoc</h2>
     <form method="get">
       <input type="hidden" name="display_lang" value="{{ display_language }}">
+      <input type="hidden" name="stats_filter" value="1">
+      {% for option in indicator_options %}{% if option.selected %}<input type="hidden" name="stats" value="{{ option.key }}">{% endif %}{% endfor %}
       {% if selected_query %}<p>Requete selectionnee : {{ selected_query.name }}</p>{% endif %}
       {{ form.as_p }}
       <button type="submit">Calculer</button>
