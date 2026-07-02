@@ -2,13 +2,351 @@
 
 {% block title %}{{ title }} - Cube MTG Analyzer{% endblock %}
 
+{% block extra_head %}
+  <style>
+    .query-builder { display: grid; gap: 0.75rem; margin: 1rem 0; max-width: 54rem; }
+    .query-row { align-items: center; display: grid; gap: 0.5rem; grid-template-columns: auto auto minmax(12rem, 1fr) auto; }
+    .query-row input { width: 100%; }
+    .query-actions { display: flex; gap: 0.35rem; }
+    .not-toggle.is-active { background: var(--surface-strong); color: white; }
+    .query-operator { color: var(--muted); font-weight: 800; text-align: center; }
+    .inline-operator { color: var(--muted); font-weight: 800; min-width: 2.5rem; text-align: right; }
+    .query-preview { background: var(--surface); border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.75rem; }
+    .metadata-grid { align-items: start; display: grid; gap: 1rem; grid-template-columns: minmax(14rem, 1fr) minmax(14rem, 1fr); }
+    .metadata-grid input, .metadata-grid textarea { width: 100%; }
+    .form-error { color: #8a1f11; }
+    .form-buttons { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+    .test-results { background: var(--surface); border: 1px solid var(--line); border-radius: 0.75rem; margin-top: 1.5rem; padding: 1rem; }
+    .test-results-header { align-items: center; display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: space-between; }
+    .view-toggle { display: flex; gap: 0.4rem; }
+    .view-toggle button.is-active { background: var(--surface-strong); color: white; }
+    .card-image { border-radius: 0.4rem; max-width: 5rem; }
+    .card-results-grid { display: none; gap: 1rem; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 1rem; }
+    .card-tile { background: white; border: 1px solid var(--line); border-radius: 0.75rem; padding: 0.75rem; }
+    .card-tile img { border-radius: 0.6rem; width: 100%; }
+    .card-tile strong { display: block; margin-top: 0.5rem; }
+    .filter-help { background: var(--surface); border: 1px solid var(--line); border-radius: 0.75rem; margin-top: 1.5rem; padding: 1rem; }
+    .filter-help-grid { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); }
+    .filter-help article { background: white; border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.75rem; }
+    .filter-help h3 { margin-top: 0; }
+    .filter-help code { display: inline-block; margin: 0.1rem 0.15rem 0.1rem 0; }
+    .oracle-text { white-space: pre-wrap; }
+    @media (max-width: 52rem) { .card-results-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 40rem) { .metadata-grid, .query-row { grid-template-columns: 1fr; } .card-results-grid { grid-template-columns: 1fr; } }
+  </style>
+{% endblock %}
+
 {% block content %}
   <p class="page-actions"><a href="{% url 'stats:query_list' %}">Retour aux requetes</a></p>
   <h1>{{ title }}</h1>
   <form method="post">
     {% csrf_token %}
-    {{ form.as_p }}
-    <button type="submit">Sauvegarder</button>
+    <div class="metadata-grid">
+      <p>
+        {{ form.name.label_tag }}<br>
+        {{ form.name }}
+        {% for error in form.name.errors %}<span class="form-error">{{ error }}</span>{% endfor %}
+      </p>
+      <p>
+        {{ form.description.label_tag }}<br>
+        {{ form.description }}
+        {% for error in form.description.errors %}<span class="form-error">{{ error }}</span>{% endfor %}
+      </p>
+    </div>
+
+    {{ form.raw_query.as_hidden }}
+    {% for error in form.raw_query.errors %}<p class="form-error">{{ error }}</p>{% endfor %}
+
+    <section aria-labelledby="query-builder-title">
+      <h2 id="query-builder-title">Construire la requete</h2>
+      <p>Remplissez un filtre par champ, ajoutez une condition avec <strong>AND</strong>/<strong>OR</strong>, ou creez un bloc indente avec <strong>NEW GROUP</strong>.</p>
+      <div id="query-builder" class="query-builder" data-initial-query="{{ form.raw_query.value|default_if_none:'' }}"></div>
+      <p class="query-preview">Requete generee : <code id="query-preview"></code></p>
+    </section>
+
+    <p class="form-buttons">
+      <button type="submit" name="test_query" value="1">Tester</button>
+      <button type="submit">Sauvegarder</button>
+    </p>
   </form>
-  <p>Exemples : <code>type:Creature AND text:"When this creature enters"</code>, <code>power=2 AND keyword:Flying</code>, <code>mv&lt;=2</code>.</p>
+  {% if test_error %}<p class="form-error">{{ test_error }}</p>{% endif %}
+  {% if test_result is not None %}
+    <section class="test-results">
+      <div class="test-results-header">
+        <h2>{{ test_result|length }} carte{{ test_result|length|pluralize }} matchante{{ test_result|length|pluralize }}</h2>
+        <p class="view-toggle" aria-label="Affichage des resultats">
+          <button type="button" class="is-active" data-results-view="list">Liste</button>
+          <button type="button" data-results-view="cards">Cartes</button>
+        </p>
+      </div>
+      <table id="test-results-list">
+        <thead><tr><th>Illustration</th><th>Carte</th></tr></thead>
+        <tbody>
+        {% for card in test_result %}
+          <tr>
+            <td>{% if card.test_printing.image_url %}<img class="card-image" src="{{ card.test_printing.image_url }}" alt="{{ card.name }}">{% endif %}</td>
+            <td>
+              <strong>{{ card.name }}</strong><br>
+              <span>{{ card.mana_cost }}{% if card.mana_value is not None %} | MV {{ card.mana_value }}{% endif %}{% if card.type_line %} | {{ card.type_line }}{% endif %}</span>
+              {% if card.oracle_text %}<p class="oracle-text">{{ card.oracle_text }}</p>{% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="2">Aucune carte ne matche cette requete.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      <section id="test-results-cards" class="card-results-grid">
+        {% for card in test_result %}
+          <article class="card-tile">
+            {% if card.test_printing.image_url %}<img src="{{ card.test_printing.image_url }}" alt="{{ card.name }}">{% endif %}
+            <strong>{{ card.name }}</strong>
+            <span>{{ card.mana_cost }}{% if card.mana_value is not None %} | MV {{ card.mana_value }}{% endif %}</span>
+          </article>
+        {% empty %}
+          <p>Aucune carte ne matche cette requete.</p>
+        {% endfor %}
+      </section>
+    </section>
+  {% endif %}
+  <section class="filter-help">
+    <h2>Filtres disponibles</h2>
+    <p>Combinez les filtres avec <code>AND</code>, <code>OR</code> et <code>NOT</code>. Les valeurs contenant des espaces doivent etre entre guillemets.</p>
+    <div class="filter-help-grid">
+      <article>
+        <h3><code>name:</code></h3>
+        <p>Recherche dans le nom de la carte.</p>
+        <p><code>name:Lightning</code> <code>name:"Llanowar Elves"</code> <code>name:dragon</code></p>
+      </article>
+      <article>
+        <h3><code>type:</code></h3>
+        <p>Recherche dans la ligne de type.</p>
+        <p><code>type:Creature</code> <code>type:Artifact</code> <code>type:"Legendary Creature"</code></p>
+      </article>
+      <article>
+        <h3><code>text:</code></h3>
+        <p>Recherche dans le texte oracle.</p>
+        <p><code>text:draw</code> <code>text:"enters the battlefield"</code> <code>text:destroy</code></p>
+      </article>
+      <article>
+        <h3><code>text_regex:</code></h3>
+        <p>Recherche avancee par regex insensible a la casse dans le texte oracle.</p>
+        <p><code>text_regex:"damage .* opponent"</code> <code>text_regex:"deals? .* damage"</code> <code>text_regex:"creature an opponent controls"</code></p>
+        <p>Pour un OU dans la regex, groupez toujours les options : <code>text_regex:"damage to (target|each) opponent"</code>. Sans parentheses, <code>target|each</code> veut dire "target" ou "each" n'importe ou.</p>
+      </article>
+      <article>
+        <h3><code>NOT</code></h3>
+        <p>Exclut un filtre. Utile pour retirer les faux positifs.</p>
+        <p><code>text_regex:"deals?.*damage" AND NOT text_regex:"combat damage"</code> <code>type:Creature AND NOT keyword:Flying</code></p>
+      </article>
+      <article>
+        <h3><code>keyword:</code></h3>
+        <p>Recherche dans les mots-cles importes.</p>
+        <p><code>keyword:Flying</code> <code>keyword:Trample</code> <code>keyword:Vigilance</code></p>
+      </article>
+      <article>
+        <h3><code>set:</code></h3>
+        <p>Filtre les cartes qui ont une impression dans cette extension, par code ou par nom.</p>
+        <p><code>set:mrd</code> <code>set:Mirrodin</code> <code>set:"Modern Horizons"</code></p>
+      </article>
+      <article>
+        <h3><code>query:</code> / <code>query_id:</code></h3>
+        <p>Reutilise une requete sauvegardee visible, puis combine-la avec <code>AND</code>, <code>OR</code> ou <code>NOT</code>.</p>
+        <p><code>query:"Removal"</code> <code>query:"Fixing" OR query:"Creatures volantes"</code> <code>query_id:12 AND set:mrd</code></p>
+      </article>
+      <article>
+        <h3><code>color:</code></h3>
+        <p>Carte contenant cette couleur parmi ses couleurs.</p>
+        <p><code>color:W</code> <code>color:U</code> <code>color:R</code></p>
+      </article>
+      <article>
+        <h3><code>identity:</code></h3>
+        <p>Carte contenant cette couleur dans son identite couleur.</p>
+        <p><code>identity:G</code> <code>identity:B</code> <code>identity:U</code></p>
+      </article>
+      <article>
+        <h3><code>mv</code></h3>
+        <p>Compare la mana value. Operateurs disponibles : <code>=</code>, <code>&lt;</code>, <code>&lt;=</code>, <code>&gt;</code>, <code>&gt;=</code>.</p>
+        <p><code>mv=2</code> <code>mv&lt;=3</code> <code>mv&gt;=6</code></p>
+      </article>
+      <article>
+        <h3><code>power</code></h3>
+        <p>Compare la force numerique.</p>
+        <p><code>power=2</code> <code>power&gt;=4</code> <code>power&lt;3</code></p>
+      </article>
+      <article>
+        <h3><code>toughness</code></h3>
+        <p>Compare l'endurance numerique.</p>
+        <p><code>toughness=1</code> <code>toughness&gt;=4</code> <code>toughness&lt;=2</code></p>
+      </article>
+      <article>
+        <h3><code>tag:</code></h3>
+        <p>Disponible seulement dans les cubes, pas dans la recherche globale de cartes.</p>
+        <p><code>tag:removal</code> <code>tag:fixing</code> <code>tag:ramp</code></p>
+      </article>
+      <article>
+        <h3>Edition / extension</h3>
+        <p>Disponible avec <code>set:</code>. Le code d'extension est le plus fiable, par exemple <code>set:mrd</code>.</p>
+      </article>
+    </div>
+  </section>
+{% endblock %}
+
+{% block extra_scripts %}
+  <script>
+    const builder = document.getElementById("query-builder");
+    const rawQueryInput = document.getElementById("id_raw_query");
+    const preview = document.getElementById("query-preview");
+
+    const escapeHtml = (value) => value
+      .replaceAll("&", "&amp;")
+      .replaceAll("\"", "&quot;")
+      .replaceAll("<", "&lt;");
+
+    let rows = [];
+
+    const tokenizeQuery = (query) => {
+      const tokens = [];
+      let current = "";
+      let inQuotes = false;
+      for (const char of query) {
+        if (char === '"') {
+          inQuotes = !inQuotes;
+          current += char;
+        } else if (!inQuotes && (char === "(" || char === ")")) {
+          if (current.trim()) tokens.push(current.trim());
+          tokens.push(char);
+          current = "";
+        } else if (!inQuotes && /\s/.test(char)) {
+          if (current.trim()) tokens.push(current.trim());
+          current = "";
+        } else {
+          current += char;
+        }
+      }
+      if (current.trim()) tokens.push(current.trim());
+      return tokens;
+    };
+
+    const parseRows = (query) => {
+      const tokens = tokenizeQuery(query);
+      const rows = [];
+      let pendingOperator = "";
+      let pendingNegated = false;
+      let level = 0;
+
+      for (const token of tokens) {
+        const upperToken = token.toUpperCase();
+        if (token === "(") {
+          level += 1;
+        } else if (token === ")") {
+          level = Math.max(0, level - 1);
+        } else if (["AND", "OR"].includes(upperToken)) {
+          pendingOperator = upperToken;
+        } else if (upperToken === "NOT") {
+          pendingNegated = true;
+        } else {
+          rows.push({ operator: pendingOperator, term: token, negated: pendingNegated, level });
+          pendingOperator = "";
+          pendingNegated = false;
+        }
+      }
+      return rows.length ? rows : [{ operator: "", term: "", negated: false, level: 0 }];
+    };
+
+    const serializeRows = () => {
+      const filledRows = rows.filter((row) => row.term.trim());
+      const parts = [];
+      let previousLevel = 0;
+      filledRows.forEach((row, index) => {
+        if (index > 0 && row.level < previousLevel) {
+          parts.push(")".repeat(previousLevel - row.level));
+        }
+        if (index > 0) parts.push(row.operator || "AND");
+        if (row.level > previousLevel) {
+          parts.push("(".repeat(row.level - previousLevel));
+        }
+        parts.push(`${row.negated ? "NOT " : ""}${row.term.trim()}`);
+        previousLevel = row.level;
+      });
+      if (previousLevel > 0) parts.push(")".repeat(previousLevel));
+      const rawQuery = parts.join(" ");
+      rawQueryInput.value = rawQuery;
+      preview.textContent = rawQuery || "Aucun filtre";
+    };
+
+    const renderRows = () => {
+      builder.innerHTML = "";
+      rows.forEach((data, index) => {
+      const row = document.createElement("div");
+      row.className = "query-row";
+      row.style.marginLeft = `${data.level * 1.5}rem`;
+      row.innerHTML = `
+        <span class="inline-operator">${index ? data.operator || "AND" : ""}</span>
+        <button type="button" class="not-toggle ${data.negated ? 'is-active' : ''}" aria-pressed="${data.negated ? 'true' : 'false'}">NOT</button>
+        <input type="text" value="${escapeHtml(data.term)}" placeholder="type:Creature, mv&lt;=2, keyword:Flying...">
+        <span class="query-actions">
+          <button type="button" data-operator="AND">AND</button>
+          <button type="button" data-operator="OR">OR</button>
+          <button type="button" data-new-group="1">NEW GROUP</button>
+          ${data.level ? '<button type="button" data-exit-group="1">Sortir du groupe</button>' : ''}
+          ${index ? '<button type="button" data-remove="1">Supprimer</button>' : ''}
+        </span>
+      `;
+      builder.appendChild(row);
+      row.querySelector(".not-toggle").addEventListener("click", (event) => {
+        const active = !rows[index].negated;
+        rows[index].negated = active;
+        event.currentTarget.classList.toggle("is-active", active);
+        event.currentTarget.setAttribute("aria-pressed", active ? "true" : "false");
+        serializeRows();
+      });
+      row.querySelector("input").addEventListener("input", (event) => {
+        rows[index].term = event.currentTarget.value;
+        serializeRows();
+      });
+      row.querySelectorAll("button[data-operator]").forEach((button) => {
+        button.addEventListener("click", () => {
+          rows.splice(index + 1, 0, { operator: button.dataset.operator, term: "", negated: false, level: data.level });
+          renderRows();
+          builder.querySelectorAll(".query-row")[index + 1].querySelector("input").focus();
+          serializeRows();
+        });
+      });
+      row.querySelector("button[data-new-group]").addEventListener("click", () => {
+        rows.splice(index + 1, 0, { operator: "AND", term: "", negated: false, level: data.level + 1 });
+        renderRows();
+        builder.querySelectorAll(".query-row")[index + 1].querySelector("input").focus();
+        serializeRows();
+      });
+      row.querySelector("button[data-exit-group]")?.addEventListener("click", () => {
+        rows.splice(index + 1, 0, { operator: "AND", term: "", negated: false, level: Math.max(0, data.level - 1) });
+        renderRows();
+        builder.querySelectorAll(".query-row")[index + 1].querySelector("input").focus();
+        serializeRows();
+      });
+      row.querySelector("button[data-remove]")?.addEventListener("click", () => {
+        rows.splice(index, 1);
+        renderRows();
+        serializeRows();
+      });
+      });
+    };
+
+    rows = parseRows(builder.dataset.initialQuery || "");
+    renderRows();
+          serializeRows();
+
+    const listResults = document.getElementById("test-results-list");
+    const cardResults = document.getElementById("test-results-cards");
+    document.querySelectorAll("[data-results-view]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const showCards = button.dataset.resultsView === "cards";
+        if (listResults) listResults.style.display = showCards ? "none" : "table";
+        if (cardResults) cardResults.style.display = showCards ? "grid" : "none";
+        document.querySelectorAll("[data-results-view]").forEach((toggle) => toggle.classList.remove("is-active"));
+        button.classList.add("is-active");
+      });
+    });
+  </script>
 {% endblock %}

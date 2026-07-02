@@ -42,10 +42,16 @@ class UserStatQueryForm(forms.ModelForm):
         model = StatQuery
         fields = ["name", "raw_query", "description"]
 
+    def __init__(self, *args, **kwargs):
+        self.stat_queries = kwargs.pop("stat_queries", None)
+        super().__init__(*args, **kwargs)
+        self.fields["description"].widget.attrs.update({"rows": 2})
+
     def clean_raw_query(self):
         raw_query = self.cleaned_data["raw_query"]
+        resolving_query_ids = {self.instance.pk} if self.instance and self.instance.pk else set()
         try:
-            parse_query(raw_query)
+            parse_query(raw_query, stat_queries=self.stat_queries, resolving_query_ids=resolving_query_ids)
         except QuerySyntaxError as exc:
             raise forms.ValidationError(str(exc)) from exc
         return raw_query

@@ -4,13 +4,7 @@
 
 {% block content %}
     <h1>Requetes custom</h1>
-
-    <h2>Creer une requete sauvegardee</h2>
-    <form method="post">
-      {% csrf_token %}
-      {{ form.as_p }}
-      <button type="submit">Sauvegarder la requete</button>
-    </form>
+    <p class="page-actions"><a href="{% url 'stats:query_create' %}">Creer une requete</a></p>
 
     <h2>Mes requetes</h2>
     <ul>

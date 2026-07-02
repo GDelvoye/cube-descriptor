@@ -36,6 +36,7 @@ def card_search(request):
         "cube": selected_cube_id,
     }
     available_sets = get_available_sets(request.user)
+    visible_stat_queries = get_visible_stat_queries(request.user)
     printings = CardPrinting.objects.select_related("set").order_by("released_at", "set_code", "collector_number")
     available_printings = CardPrinting.objects.filter(oracle=OuterRef("pk"), set__in=available_sets)
     queryset = CardOracle.objects.filter(Exists(available_printings))
@@ -77,7 +78,9 @@ def card_search(request):
     if filters["raw_query"]:
         try:
             queryset = queryset.filter(
-                build_oracle_query(filters["raw_query"], available_sets=available_sets)
+                build_oracle_query(
+                    filters["raw_query"], available_sets=available_sets, stat_queries=visible_stat_queries
+                )
             ).distinct()
         except QuerySyntaxError as exc:
             filters["raw_query_error"] = str(exc)
@@ -104,7 +107,7 @@ def card_search(request):
             "add_card_form": AddCardToCubeForm(user=request.user, initial={"cube": selected_cube_id})
             if request.user.is_authenticated
             else None,
-            "stat_queries": get_visible_stat_queries(request.user),
+            "stat_queries": visible_stat_queries,
             "display_language": display_language,
             "language_querystrings": build_language_querystrings(request),
         },

@@ -56,7 +56,9 @@ def cube_detail(request, pk):
     available_sets = get_available_sets(request.user)
     if raw_query:
         try:
-            _, matching_rows = count_cube_matches(cube_cards, raw_query, available_sets=available_sets)
+            _, matching_rows = count_cube_matches(
+                cube_cards, raw_query, available_sets=available_sets, stat_queries=visible_queries
+            )
             filtered_cards = matching_rows
         except QuerySyntaxError as exc:
             filter_error = str(exc)
@@ -116,7 +118,7 @@ def cube_stats(request, pk):
     if form.is_valid():
         try:
             matching_count, matching_rows = count_cube_matches(
-                cube_cards, form.cleaned_data["raw_query"], available_sets=available_sets
+                cube_cards, form.cleaned_data["raw_query"], available_sets=available_sets, stat_queries=visible_queries
             )
             for cube_card in matching_rows:
                 apply_cube_card_display(cube_card, display_language, available_sets)
