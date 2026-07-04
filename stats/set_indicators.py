@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from cards.models import DEFAULT_AVAILABLE_SET_TYPES, CardPrinting
+from stats.query_cache import refresh_stat_query_cache
+from stats.query_engine import QuerySyntaxError
 
 RARE_SLOT_MYTHIC_RATE = 1 / 8
 REMOVAL_TERMS = ("destroy", "exile", "damage", "-x/-x", "deals", "sacrifice")
@@ -59,6 +61,15 @@ SET_INDICATORS = (
     ),
 )
 
+QUERY_INDICATOR_DEFINITIONS = (
+    {
+        "query_name": "removal",
+        "key": "query_removal",
+        "label": "Removal 2",
+        "description": "Cartes correspondant a la requete sauvegardee removal",
+    },
+)
+
 
 def infer_booster_profile(printings):
     has_mythics = has_rarity(printings, "mythic")
@@ -112,9 +123,10 @@ def build_booster_slots(printings, matching_printings):
     return slots, rarity_rows
 
 
-def build_set_indicators(printings):
+def build_set_indicators(printings, indicators=None):
+    indicators = indicators or SET_INDICATORS
     profile = infer_booster_profile(printings)
-    return [build_indicator_row(printings, profile, indicator) for indicator in SET_INDICATORS]
+    return [build_indicator_row(printings, profile, indicator) for indicator in indicators]
 
 
 def build_set_indicator_benchmarks(printings_by_set, indicators=None):
@@ -151,7 +163,8 @@ def get_official_set_printings():
     return printings_by_set
 
 
-def build_indicator_options(selected_stat_keys):
+def build_indicator_options(selected_stat_keys, indicators=None):
+    indicators = indicators or SET_INDICATORS
     selected_stat_keys = set(selected_stat_keys)
     return [
         {
@@ -159,15 +172,16 @@ def build_indicator_options(selected_stat_keys):
             "label": indicator.label,
             "selected": indicator.key in selected_stat_keys,
         }
-        for indicator in SET_INDICATORS
+        for indicator in indicators
     ]
 
 
-def get_selected_indicator_keys(request):
+def get_selected_indicator_keys(request, indicators=None):
+    indicators = indicators or SET_INDICATORS
     selected_stat_keys = request.GET.getlist("stats")
-    available_stat_keys = {indicator.key for indicator in SET_INDICATORS}
+    available_stat_keys = {indicator.key for indicator in indicators}
     if not selected_stat_keys and "stats_filter" not in request.GET:
-        selected_stat_keys = [indicator.key for indicator in SET_INDICATORS]
+        selected_stat_keys = [indicator.key for indicator in indicators]
     return [key for key in selected_stat_keys if key in available_stat_keys]
 
 
@@ -180,10 +194,11 @@ def attach_benchmarks(indicators, benchmarks):
     return indicators
 
 
-def build_cube_indicators(cube_cards, booster_size):
+def build_cube_indicators(cube_cards, booster_size, indicators=None):
+    indicators = indicators or SET_INDICATORS
     total_cards = sum(cube_card.quantity for cube_card in cube_cards)
     rows = []
-    for indicator in SET_INDICATORS:
+    for indicator in indicators:
         matching_count = sum(cube_card.quantity for cube_card in cube_cards if indicator.matcher(cube_card.oracle))
         expected = booster_size * matching_count / total_cards if total_cards else 0
         rows.append(
@@ -196,6 +211,36 @@ def build_cube_indicators(cube_cards, booster_size):
             }
         )
     return rows
+
+
+def build_available_indicators(stat_queries=None):
+    return SET_INDICATORS + tuple(build_query_indicators(stat_queries))
+
+
+def build_query_indicators(stat_queries=None):
+    if stat_queries is None:
+        return []
+
+    indicators = []
+    for definition in QUERY_INDICATOR_DEFINITIONS:
+        stat_query = stat_queries.filter(name__iexact=definition["query_name"]).first()
+        if not stat_query:
+            continue
+        matcher = build_stat_query_matcher(stat_query, stat_queries)
+        if matcher is None:
+            continue
+        indicators.append(SetIndicator(definition["key"], definition["label"], definition["description"], matcher))
+    return indicators
+
+
+def build_stat_query_matcher(stat_query, stat_queries):
+    if stat_query.match_cache_refreshed_at is None:
+        try:
+            refresh_stat_query_cache(stat_query, stat_queries)
+        except QuerySyntaxError:
+            return None
+    matching_oracle_ids = set(stat_query.matches.values_list("oracle_id", flat=True))
+    return lambda oracle: oracle.pk in matching_oracle_ids
 
 
 def build_indicator_row(printings, profile, indicator):

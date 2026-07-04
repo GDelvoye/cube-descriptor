@@ -2,18 +2,127 @@
 
 {% block title %}{{ stat_query.name }} - Cube MTG Analyzer{% endblock %}
 
+{% block extra_head %}
+  <style>
+    .query-hero { background: linear-gradient(135deg, var(--surface), #fff); border: 1px solid var(--line); border-radius: 1rem; box-shadow: var(--shadow); margin-bottom: 1.25rem; padding: 1.1rem; }
+    .query-hero-header { align-items: start; display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; }
+    .query-hero h1 { margin: 0 0 0.45rem; }
+    .query-meta { display: flex; flex-wrap: wrap; gap: 0.45rem; margin: 0.5rem 0 0; }
+    .query-pill { background: var(--accent-soft); border: 1px solid #d8b9a8; border-radius: 999px; color: var(--accent); font-size: 0.9rem; font-weight: 800; padding: 0.25rem 0.55rem; }
+    .query-pill.is-muted { background: white; color: var(--muted); }
+    .query-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .query-action { background: var(--surface); border: 1px solid var(--line); border-radius: 999px; color: var(--accent); display: inline-block; padding: 0.4rem 0.7rem; text-decoration: none; }
+    .query-delete { background: transparent; border: 1px solid #b97465; border-radius: 999px; color: #8a1f11; padding: 0.4rem 0.7rem; }
+    .raw-query-panel { background: var(--surface-strong); border-radius: 0.75rem; color: white; margin-top: 1rem; padding: 0.85rem; }
+    .raw-query-panel span { color: #d7c9be; display: block; font-size: 0.8rem; font-weight: 800; letter-spacing: 0.05em; margin-bottom: 0.3rem; text-transform: uppercase; }
+    .raw-query-panel code { color: white; white-space: normal; word-break: break-word; }
+    .query-layout { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr) minmax(15rem, 20rem); }
+    .query-panel { background: var(--surface); border: 1px solid var(--line); border-radius: 0.85rem; padding: 1rem; }
+    .query-panel h2 { margin-top: 0; }
+    .query-links { display: grid; gap: 0.35rem; list-style: none; padding: 0; }
+    .query-error { background: #fff0ea; border: 1px solid #e0a08f; border-radius: 0.75rem; color: #8a1f11; padding: 0.85rem; }
+    .results-header { align-items: baseline; display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: space-between; }
+    .card-image { border-radius: 0.4rem; max-width: 4.7rem; }
+    .oracle-text { white-space: pre-wrap; }
+    .muted { color: var(--muted); }
+    .results-table { border-collapse: collapse; width: 100%; }
+    .results-table th, .results-table td { border-bottom: 1px solid var(--line); padding: 0.65rem; text-align: left; vertical-align: top; }
+    .results-table th { color: var(--muted); font-size: 0.85rem; text-transform: uppercase; }
+    .pagination { display: flex; gap: 1rem; margin-top: 1rem; }
+    @media (max-width: 52rem) { .query-layout { grid-template-columns: 1fr; } }
+  </style>
+{% endblock %}
+
 {% block content %}
   <p class="page-actions">
     <a href="{% url 'stats:query_list' %}">Toutes les requetes</a>
     <a href="{% url 'cards:search' %}?stat_query={{ stat_query.pk }}">Utiliser dans la recherche cartes</a>
   </p>
-  <h1>{{ stat_query.name }}</h1>
-  <p><code>{{ stat_query.raw_query }}</code></p>
-  {% if stat_query.description %}<p>{{ stat_query.description }}</p>{% endif %}
-  <p>Scope : {{ stat_query.scope }}{% if stat_query.cube %} / {{ stat_query.cube.name }}{% endif %}</p>
-  <p><a href="{% url 'stats:query_edit' stat_query.pk %}">Modifier</a></p>
-  <form method="post" action="{% url 'stats:query_delete' stat_query.pk %}">
-    {% csrf_token %}
-    <button type="submit">Supprimer</button>
-  </form>
+
+  <section class="query-hero" aria-labelledby="query-title">
+    <div class="query-hero-header">
+      <div>
+        <h1 id="query-title">{{ stat_query.name }}</h1>
+        {% if stat_query.description %}<p>{{ stat_query.description }}</p>{% endif %}
+        <p class="query-meta">
+          <span class="query-pill">{{ matching_count }} carte{{ matching_count|pluralize }} matchante{{ matching_count|pluralize }}</span>
+          <span class="query-pill is-muted">Scope {{ stat_query.scope }}</span>
+          {% if stat_query.cube %}<span class="query-pill is-muted">Cube {{ stat_query.cube.name }}</span>{% endif %}
+          {% if stat_query.match_cache_refreshed_at %}<span class="query-pill is-muted">Cache {{ stat_query.match_cache_refreshed_at|date:"d/m/Y H:i" }}</span>{% endif %}
+        </p>
+      </div>
+      {% if can_edit %}
+        <div class="query-actions">
+          <a class="query-action" href="{% url 'stats:query_edit' stat_query.pk %}">Modifier</a>
+          <form method="post" action="{% url 'stats:query_delete' stat_query.pk %}">
+            {% csrf_token %}
+            <button class="query-delete" type="submit">Supprimer</button>
+          </form>
+        </div>
+      {% endif %}
+    </div>
+    <div class="raw-query-panel">
+      <span>Raw query</span>
+      <code>{{ stat_query.raw_query }}</code>
+    </div>
+  </section>
+
+  <div class="query-layout">
+    <section class="query-panel" aria-labelledby="results-title">
+      <div class="results-header">
+        <h2 id="results-title">Cartes resultantes</h2>
+        {% if page.paginator.num_pages > 1 %}<p class="muted">Page {{ page.number }} / {{ page.paginator.num_pages }}</p>{% endif %}
+      </div>
+
+      {% if cache_error %}
+        <p class="query-error">Impossible d'afficher les cartes resultantes : {{ cache_error }}</p>
+      {% else %}
+        <table class="results-table">
+          <thead><tr><th>Illustration</th><th>Carte</th></tr></thead>
+          <tbody>
+          {% for card in page.object_list %}
+            <tr>
+              <td>{% if card.test_printing.image_url %}<img class="card-image" src="{{ card.test_printing.image_url }}" alt="{{ card.name }}" loading="lazy" decoding="async">{% endif %}</td>
+              <td>
+                <strong>{{ card.name }}</strong><br>
+                <span class="muted">{{ card.mana_cost }}{% if card.mana_value is not None %} | MV {{ card.mana_value }}{% endif %}{% if card.type_line %} | {{ card.type_line }}{% endif %}</span>
+                {% if card.oracle_text %}<p class="oracle-text">{{ card.oracle_text }}</p>{% endif %}
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="2">Aucune carte ne matche cette requete.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+
+        {% if page.paginator.num_pages > 1 %}
+          <nav class="pagination">
+            {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}">Page precedente</a>{% endif %}
+            <span>Page {{ page.number }} / {{ page.paginator.num_pages }}</span>
+            {% if page.has_next %}<a href="?page={{ page.next_page_number }}">Page suivante</a>{% endif %}
+          </nav>
+        {% endif %}
+      {% endif %}
+    </section>
+
+    <aside class="query-panel">
+      <h2>Dependances</h2>
+      <h3>Utilise</h3>
+      <ul class="query-links">
+        {% for dependency in dependencies %}
+          <li><a href="{% url 'stats:query_detail' dependency.child.pk %}">{{ dependency.child.name }}</a></li>
+        {% empty %}
+          <li class="muted">Aucune sous-requete.</li>
+        {% endfor %}
+      </ul>
+      <h3>Utilisee par</h3>
+      <ul class="query-links">
+        {% for dependent in dependents %}
+          <li><a href="{% url 'stats:query_detail' dependent.parent.pk %}">{{ dependent.parent.name }}</a></li>
+        {% empty %}
+          <li class="muted">Aucune requete dependante.</li>
+        {% endfor %}
+      </ul>
+    </aside>
+  </div>
 {% endblock %}

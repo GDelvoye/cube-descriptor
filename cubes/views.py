@@ -11,6 +11,7 @@ from stats.probabilities import probability_at_least, probability_between, proba
 from stats.query_engine import QuerySyntaxError, count_cube_matches
 from stats.set_indicators import (
     attach_benchmarks,
+    build_available_indicators,
     build_cube_indicators,
     build_indicator_options,
     build_set_indicator_benchmarks,
@@ -120,10 +121,15 @@ def cube_stats(request, pk):
     form = CubeStatsForm(request.GET or None)
     if initial and not request.GET.get("raw_query"):
         form = CubeStatsForm({**request.GET.dict(), **initial})
-    selected_stat_keys = get_selected_indicator_keys(request)
+    indicators_available = build_available_indicators(visible_queries)
+    selected_stat_keys = get_selected_indicator_keys(request, indicators_available)
     booster_size = min(cube.booster_size, total_cards)
-    indicators = [row for row in build_cube_indicators(cube_cards, booster_size) if row["key"] in selected_stat_keys]
-    benchmarks = build_set_indicator_benchmarks(get_official_set_printings())
+    indicators = [
+        row
+        for row in build_cube_indicators(cube_cards, booster_size, indicators_available)
+        if row["key"] in selected_stat_keys
+    ]
+    benchmarks = build_set_indicator_benchmarks(get_official_set_printings(), indicators_available)
     attach_benchmarks(indicators, benchmarks)
     result = None
     error = None
@@ -175,7 +181,7 @@ def cube_stats(request, pk):
             "result": result,
             "error": error,
             "indicators": indicators,
-            "indicator_options": build_indicator_options(selected_stat_keys),
+            "indicator_options": build_indicator_options(selected_stat_keys, indicators_available),
             "total_cards": total_cards,
             "display_language": display_language,
             "language_querystrings": build_language_querystrings(request),

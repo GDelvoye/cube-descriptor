@@ -7,7 +7,7 @@ from django.urls import reverse
 
 from cards.models import CardOracle, CardPrinting, Set
 from cubes.models import Cube, CubeCard
-from stats.models import StatQuery
+from stats.models import StatQuery, StatQueryDependency, StatQueryMatch
 from stats.query_engine import build_oracle_query, count_cube_matches
 from stats.set_indicators import build_set_indicator_benchmarks, build_set_indicators
 
@@ -122,6 +122,95 @@ class StatsSourceTests(TestCase):
         self.assertContains(response, "https://example.com/old.jpg")
         self.assertNotContains(response, "https://example.com/new.jpg")
 
+    def test_query_create_refreshes_match_cache(self):
+        removal = self.create_printing("Doom Blade", "common", "Instant", oracle_text="Destroy target creature.")
+        self.create_printing("Bear", "common", "Creature")
+
+        response = self.client.post(
+            reverse("stats:query_create"),
+            {"name": "destroy removal", "raw_query": "text:destroy", "description": ""},
+        )
+
+        stat_query = StatQuery.objects.get(name="destroy removal")
+        self.assertRedirects(response, reverse("stats:query_detail", kwargs={"pk": stat_query.pk}))
+        self.assertIsNotNone(stat_query.match_cache_refreshed_at)
+        self.assertQuerySetEqual(
+            StatQueryMatch.objects.filter(stat_query=stat_query),
+            [removal.oracle],
+            transform=lambda match: match.oracle,
+        )
+
+    def test_query_edit_refreshes_dependent_match_caches(self):
+        destroy = self.create_printing("Doom Blade", "common", "Instant", oracle_text="Destroy target creature.")
+        exile = self.create_printing("Path", "common", "Instant", oracle_text="Exile target creature.")
+        self.create_printing("Bear", "common", "Creature")
+
+        self.client.post(
+            reverse("stats:query_create"),
+            {"name": "destroy removal", "raw_query": "text:destroy", "description": ""},
+        )
+        child = StatQuery.objects.get(name="destroy removal")
+        self.client.post(
+            reverse("stats:query_create"),
+            {"name": "removal", "raw_query": 'query:"destroy removal"', "description": ""},
+        )
+        parent = StatQuery.objects.get(name="removal")
+
+        self.assertTrue(StatQueryDependency.objects.filter(parent=parent, child=child).exists())
+        self.assertQuerySetEqual(
+            StatQueryMatch.objects.filter(stat_query=parent),
+            [destroy.oracle],
+            transform=lambda match: match.oracle,
+        )
+
+        response = self.client.post(
+            reverse("stats:query_edit", kwargs={"pk": child.pk}),
+            {"name": "destroy removal", "raw_query": "text:exile", "description": ""},
+        )
+
+        self.assertRedirects(response, reverse("stats:query_detail", kwargs={"pk": child.pk}))
+        self.assertQuerySetEqual(
+            StatQueryMatch.objects.filter(stat_query=child),
+            [exile.oracle],
+            transform=lambda match: match.oracle,
+        )
+        self.assertQuerySetEqual(
+            StatQueryMatch.objects.filter(stat_query=parent),
+            [exile.oracle],
+            transform=lambda match: match.oracle,
+        )
+
+    def test_query_detail_shows_matching_cards(self):
+        removal = self.create_printing("Doom Blade", "common", "Instant", oracle_text="Destroy target creature.")
+        self.create_printing("Bear", "common", "Creature")
+        stat_query = StatQuery.objects.create(owner=self.user, name="destroy removal", raw_query="text:destroy")
+
+        response = self.client.get(reverse("stats:query_detail", kwargs={"pk": stat_query.pk}))
+
+        stat_query.refresh_from_db()
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNotNone(stat_query.match_cache_refreshed_at)
+        self.assertContains(response, "destroy removal")
+        self.assertContains(response, "text:destroy")
+        self.assertContains(response, "1 carte matchante")
+        self.assertContains(response, removal.oracle.name)
+        self.assertNotContains(response, "Bear")
+
+    def test_query_detail_allows_read_only_global_query(self):
+        stat_query = StatQuery.objects.create(
+            owner=None,
+            scope=StatQuery.Scope.GLOBAL,
+            name="global creatures",
+            raw_query="type:Creature",
+        )
+
+        response = self.client.get(reverse("stats:query_detail", kwargs={"pk": stat_query.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "global creatures")
+        self.assertNotContains(response, "Modifier")
+        self.assertNotContains(response, "Supprimer")
+
     def test_set_stats_uses_rarity_slots(self):
         self.create_printing("Common Hit", "common", "Creature")
         self.create_printing("Common Miss", "common", "Instant")
@@ -188,6 +277,38 @@ class StatsSourceTests(TestCase):
         self.assertEqual(indicators["fixing"]["matching_count"], 1)
         self.assertEqual(indicators["cheap"]["matching_count"], 2)
         self.assertEqual(indicators["expensive"]["matching_count"], 1)
+
+    def test_set_stats_can_include_removal_query_indicator(self):
+        StatQuery.objects.create(owner=self.user, name="removal", raw_query="text:destroy OR text:exile")
+        self.create_printing("Doom Blade", "common", "Instant", oracle_text="Destroy target creature.")
+        self.create_printing("Path", "common", "Instant", oracle_text="Exile target creature.")
+        self.create_printing("Burn", "common", "Instant", oracle_text="Burn deals 3 damage to any target.")
+
+        response = self.client.get(
+            reverse("stats:set_stats", kwargs={"pk": self.card_set.pk}),
+            {"stats_filter": "1", "stats": ["query_removal"]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([indicator["key"] for indicator in response.context["indicators"]], ["query_removal"])
+        self.assertContains(response, "Removal 2 (#2)")
+
+    def test_cube_stats_can_include_removal_query_indicator(self):
+        StatQuery.objects.create(owner=self.user, name="removal", raw_query="text:destroy")
+        removal = self.create_printing("Doom Blade", "common", "Instant", oracle_text="Destroy target creature.")
+        burn = self.create_printing("Burn", "common", "Instant", oracle_text="Burn deals 3 damage to any target.")
+        cube = Cube.objects.create(owner=self.user, name="Query Indicator Cube", booster_size=2)
+        CubeCard.objects.create(cube=cube, oracle=removal.oracle, quantity=1)
+        CubeCard.objects.create(cube=cube, oracle=burn.oracle, quantity=1)
+
+        response = self.client.get(
+            reverse("cubes:stats", kwargs={"pk": cube.pk}),
+            {"stats_filter": "1", "stats": ["query_removal"]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([indicator["key"] for indicator in response.context["indicators"]], ["query_removal"])
+        self.assertContains(response, "Removal 2 (#1)")
 
     def test_set_stats_filters_visible_indicators(self):
         self.create_printing("Common Creature", "common", "Creature")

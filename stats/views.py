@@ -1,4 +1,6 @@
 from django.contrib.auth.decorators import login_required
+from django.core.paginator import Paginator
+from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
@@ -9,9 +11,11 @@ from cubes.models import Cube
 from .forms import CubeStatsForm, UserStatQueryForm
 from .models import StatQuery
 from .probabilities import probability_at_least_by_slots, probability_between_by_slots, probability_exactly_by_slots
+from .query_cache import get_visible_stat_queries_for_cache, refresh_stat_query_cache
 from .query_engine import QuerySyntaxError, build_oracle_query
 from .set_indicators import (
     attach_benchmarks,
+    build_available_indicators,
     build_booster_slots,
     build_indicator_options,
     build_set_indicator_benchmarks,
@@ -40,14 +44,17 @@ def set_stats(request, pk):
     display_language = get_display_language(request)
     form = CubeStatsForm(request.GET or None)
     visible_stat_queries = get_visible_stat_queries(request.user)
-    selected_stat_keys = get_selected_indicator_keys(request)
+    indicators_available = build_available_indicators(visible_stat_queries)
+    selected_stat_keys = get_selected_indicator_keys(request, indicators_available)
     result = None
     error = None
 
     printings = CardPrinting.objects.filter(set=card_set, lang="en").select_related("oracle", "set")
     printings_list = list(printings)
-    indicators = [row for row in build_set_indicators(printings_list) if row["key"] in selected_stat_keys]
-    benchmarks = build_set_indicator_benchmarks(get_official_set_printings())
+    indicators = [
+        row for row in build_set_indicators(printings_list, indicators_available) if row["key"] in selected_stat_keys
+    ]
+    benchmarks = build_set_indicator_benchmarks(get_official_set_printings(), indicators_available)
     attach_benchmarks(indicators, benchmarks)
     if form.is_valid():
         try:
@@ -99,7 +106,7 @@ def set_stats(request, pk):
             "result": result,
             "error": error,
             "indicators": indicators,
-            "indicator_options": build_indicator_options(selected_stat_keys),
+            "indicator_options": build_indicator_options(selected_stat_keys, indicators_available),
             "display_language": display_language,
             "language_querystrings": build_language_querystrings(request),
         },
@@ -139,6 +146,7 @@ def stat_query_create(request):
             stat_query.owner = request.user
             stat_query.scope = StatQuery.Scope.USER
             stat_query.save()
+            refresh_stat_query_cache(stat_query, get_visible_stat_queries(request.user))
             return redirect("stats:query_detail", pk=stat_query.pk)
     else:
         form = UserStatQueryForm(stat_queries=get_visible_stat_queries(request.user))
@@ -151,8 +159,41 @@ def stat_query_create(request):
 
 @login_required
 def stat_query_detail(request, pk):
-    stat_query = get_owned_query(request.user, pk)
-    return render(request, "stats/query_detail.html", {"stat_query": stat_query})
+    stat_query = get_accessible_query(request.user, pk)
+    cache_error = None
+    if stat_query.match_cache_refreshed_at is None:
+        try:
+            refresh_stat_query_cache(stat_query, get_visible_stat_queries_for_cache(stat_query))
+            stat_query.refresh_from_db()
+        except QuerySyntaxError as exc:
+            cache_error = str(exc)
+
+    matching_cards = []
+    if cache_error is None:
+        matching_cards = list(
+            CardOracle.objects.filter(stat_query_matches__stat_query=stat_query)
+            .prefetch_related("printings")
+            .distinct()
+            .order_by("name")
+        )
+        for card in matching_cards:
+            card.test_printing = select_test_result_printing(card)
+    paginator = Paginator(matching_cards, 60)
+    page = paginator.get_page(request.GET.get("page"))
+
+    return render(
+        request,
+        "stats/query_detail.html",
+        {
+            "stat_query": stat_query,
+            "cache_error": cache_error,
+            "matching_count": len(matching_cards),
+            "page": page,
+            "dependencies": stat_query.dependencies.select_related("child").order_by("child__name"),
+            "dependents": stat_query.dependents.select_related("parent").order_by("parent__name"),
+            "can_edit": stat_query.owner_id == request.user.pk,
+        },
+    )
 
 
 @login_required
@@ -172,7 +213,8 @@ def stat_query_edit(request, pk):
                 request.POST, instance=stat_query, stat_queries=get_visible_stat_queries(request.user)
             )
         if "test_query" not in request.POST and form.is_valid():
-            form.save()
+            stat_query = form.save()
+            refresh_stat_query_cache(stat_query, get_visible_stat_queries(request.user))
             return redirect("stats:query_detail", pk=stat_query.pk)
     else:
         form = UserStatQueryForm(instance=stat_query, stat_queries=get_visible_stat_queries(request.user))
@@ -236,3 +278,11 @@ def stat_query_delete(request, pk):
 
 def get_owned_query(user, pk):
     return get_object_or_404(StatQuery.objects.select_related("cube"), pk=pk, owner=user)
+
+
+def get_accessible_query(user, pk):
+    return get_object_or_404(
+        StatQuery.objects.select_related("owner", "cube"),
+        Q(scope=StatQuery.Scope.GLOBAL, owner__isnull=True) | Q(owner=user),
+        pk=pk,
+    )

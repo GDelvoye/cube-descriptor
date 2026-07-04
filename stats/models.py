@@ -17,6 +17,7 @@ class StatQuery(models.Model):
     description = models.TextField(blank=True)
     scope = models.CharField(max_length=16, choices=Scope.choices, default=Scope.USER)
     created_at = models.DateTimeField(auto_now_add=True)
+    match_cache_refreshed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["name"]
@@ -24,3 +25,24 @@ class StatQuery(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class StatQueryMatch(models.Model):
+    stat_query = models.ForeignKey(StatQuery, on_delete=models.CASCADE, related_name="matches")
+    oracle = models.ForeignKey("cards.CardOracle", on_delete=models.CASCADE, related_name="stat_query_matches")
+    computed_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["stat_query", "oracle"], name="unique_stat_query_oracle_match"),
+        ]
+
+
+class StatQueryDependency(models.Model):
+    parent = models.ForeignKey(StatQuery, on_delete=models.CASCADE, related_name="dependencies")
+    child = models.ForeignKey(StatQuery, on_delete=models.CASCADE, related_name="dependents")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["parent", "child"], name="unique_stat_query_dependency"),
+        ]

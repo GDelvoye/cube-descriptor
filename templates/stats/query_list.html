@@ -22,7 +22,7 @@
     <h2>Requetes globales</h2>
     <ul>
       {% for stat_query in global_queries %}
-        <li>{{ stat_query.name }} - <code>{{ stat_query.raw_query }}</code></li>
+        <li><a href="{% url 'stats:query_detail' stat_query.pk %}">{{ stat_query.name }}</a> - <code>{{ stat_query.raw_query }}</code></li>
       {% empty %}
         <li>Aucune requete globale.</li>
       {% endfor %}
