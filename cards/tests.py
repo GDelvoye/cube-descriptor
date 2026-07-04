@@ -172,8 +172,63 @@ class CardLocalizationTests(TestCase):
 
         self.assertRedirects(response, f"/cards/?cube={cube.pk}&q=Toast")
         self.assertContains(response, "2 cartes ajoutees a Toast Cube.")
-        self.assertContains(response, f'name="cube" value="{cube.pk}"')
+        self.assertContains(response, f'<option value="{cube.pk}" selected>{cube.name}</option>')
         self.assertEqual(CubeCard.objects.get(cube=cube, oracle=oracle).quantity, 2)
+
+    def test_search_adjust_buttons_add_and_remove_selected_cube_card(self):
+        user = self.create_user()
+        cube = Cube.objects.create(owner=user, name="Button Cube")
+        oracle = CardOracle.objects.create(scryfall_oracle_id=uuid4(), name="Button Card")
+        self.create_printing(oracle, self.set, "en", "1", "Button Card", "Creature", "Button text", "button")
+        self.client.force_login(user)
+
+        response = self.client.get("/cards/", {"cube": cube.pk, "q": "Button", "view": "images"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Cube cible")
+        self.assertContains(response, 'data-action="add"')
+        self.assertContains(response, 'data-action="remove"')
+        self.assertContains(response, 'class="card-grid is-images"')
+
+        add_response = self.client.post(
+            f"/cards/{oracle.pk}/adjust-cube-card/",
+            {"cube": cube.pk, "action": "add", "next": f"/cards/?cube={cube.pk}&q=Button"},
+        )
+
+        self.assertRedirects(add_response, f"/cards/?cube={cube.pk}&q=Button")
+        self.assertEqual(CubeCard.objects.get(cube=cube, oracle=oracle).quantity, 1)
+
+        remove_response = self.client.post(
+            f"/cards/{oracle.pk}/adjust-cube-card/",
+            {"cube": cube.pk, "action": "remove", "next": f"/cards/?cube={cube.pk}&q=Button"},
+        )
+
+        self.assertRedirects(remove_response, f"/cards/?cube={cube.pk}&q=Button")
+        self.assertFalse(CubeCard.objects.filter(cube=cube, oracle=oracle).exists())
+
+    def test_adjust_cube_card_returns_json_for_ajax(self):
+        user = self.create_user()
+        cube = Cube.objects.create(owner=user, name="Ajax Cube")
+        oracle = CardOracle.objects.create(scryfall_oracle_id=uuid4(), name="Ajax Card")
+        self.client.force_login(user)
+
+        response = self.client.post(
+            f"/cards/{oracle.pk}/adjust-cube-card/",
+            {"cube": cube.pk, "action": "add"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"quantity": 1})
+
+        response = self.client.post(
+            f"/cards/{oracle.pk}/adjust-cube-card/",
+            {"cube": cube.pk, "action": "remove"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"quantity": 0})
 
     def create_user(self):
         return get_user_model().objects.create_user(username=f"user-{uuid4()}", password="password")

@@ -9,5 +9,6 @@ urlpatterns = [
     path("sets/preferences/", views.set_preferences, name="set_preferences"),
     path("sets/preferences/update/", views.update_set_preferences, name="update_set_preferences"),
     path("add-selected-to-cube/", views.add_selected_to_cube, name="add_selected_to_cube"),
+    path("<int:oracle_id>/adjust-cube-card/", views.adjust_cube_card, name="adjust_cube_card"),
     path("<int:oracle_id>/add-to-cube/", views.add_to_cube, name="add_to_cube"),
 ]

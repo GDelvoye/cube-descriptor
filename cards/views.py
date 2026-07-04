@@ -4,12 +4,13 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.db.models import Exists, OuterRef, Prefetch, Q
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
 from cubes.forms import AddCardToCubeForm
-from cubes.models import CubeCard
+from cubes.models import Cube, CubeCard
 from stats.models import StatQuery
 from stats.query_engine import QuerySyntaxError, build_oracle_query
 
@@ -22,9 +23,16 @@ def card_search(request):
     selected_stat_query = get_selected_stat_query(request)
     display_language = get_display_language(request)
     selected_cube_id = request.GET.get("cube", "").strip()
+    selected_cube = get_selected_cube(request.user, selected_cube_id)
+    selected_colors = [
+        color.upper() for color in request.GET.getlist("color") if color.upper() in {"W", "U", "B", "R", "G"}
+    ]
+    view_mode = request.GET.get("view", "text")
+    if view_mode not in {"text", "images"}:
+        view_mode = "text"
     filters = {
         "q": request.GET.get("q", "").strip(),
-        "color": request.GET.get("color", "").strip().upper(),
+        "colors": selected_colors,
         "type": request.GET.get("type", "").strip(),
         "text": request.GET.get("text", "").strip(),
         "mv_lte": request.GET.get("mv_lte", "").strip(),
@@ -33,7 +41,8 @@ def card_search(request):
             selected_stat_query.raw_query if selected_stat_query else request.GET.get("raw_query", "")
         ).strip(),
         "stat_query": request.GET.get("stat_query", "").strip(),
-        "cube": selected_cube_id,
+        "cube": str(selected_cube.pk) if selected_cube else "",
+        "view": view_mode,
     }
     available_sets = get_available_sets(request.user)
     visible_stat_queries = get_visible_stat_queries(request.user)
@@ -56,8 +65,8 @@ def card_search(request):
             | Q(printings__set__in=available_sets, printings__printed_name__icontains=filters["q"])
             | Q(printings__set__in=available_sets, printings__printed_type_line__icontains=filters["q"])
         ).distinct()
-    if filters["color"]:
-        queryset = queryset.filter(colors__contains=[filters["color"]])
+    for color in filters["colors"]:
+        queryset = queryset.filter(colors__contains=[color])
     if filters["type"]:
         queryset = queryset.filter(
             Q(type_line__icontains=filters["type"])
@@ -92,6 +101,15 @@ def card_search(request):
         apply_oracle_display(oracle, display_language, available_sets)
         if oracle.display_localized_printing and oracle.display_localized_printing.image_url:
             oracle.display_printing = oracle.display_localized_printing
+        oracle.selected_cube_quantity = 0
+    if selected_cube:
+        quantities_by_oracle_id = dict(
+            CubeCard.objects.filter(
+                cube=selected_cube, oracle__in=page.object_list, section=CubeCard.Section.MAIN
+            ).values_list("oracle_id", "quantity")
+        )
+        for oracle in page.object_list:
+            oracle.selected_cube_quantity = quantities_by_oracle_id.get(oracle.pk, 0)
     query_params = request.GET.copy()
     query_params.pop("page", None)
 
@@ -104,6 +122,8 @@ def card_search(request):
             "sets": available_sets.order_by("code"),
             "total_count": paginator.count,
             "querystring": query_params.urlencode(),
+            "selected_cube": selected_cube,
+            "view_mode": view_mode,
             "add_card_form": AddCardToCubeForm(user=request.user, initial={"cube": selected_cube_id})
             if request.user.is_authenticated
             else None,
@@ -112,6 +132,12 @@ def card_search(request):
             "language_querystrings": build_language_querystrings(request),
         },
     )
+
+
+def get_selected_cube(user, selected_cube_id):
+    if not user.is_authenticated or not selected_cube_id or not selected_cube_id.isdigit():
+        return None
+    return Cube.objects.filter(owner=user, pk=selected_cube_id).first()
 
 
 @login_required
@@ -176,6 +202,30 @@ def add_to_cube(request, oracle_id):
 
 @login_required
 @require_POST
+def adjust_cube_card(request, oracle_id):
+    oracle = get_object_or_404(CardOracle, pk=oracle_id)
+    cube = get_object_or_404(Cube, pk=request.POST.get("cube"), owner=request.user)
+    action = request.POST.get("action")
+    if action == "add":
+        add_oracles_to_cube(cube, [oracle], 1)
+    elif action == "remove":
+        remove_oracle_from_cube(cube, oracle)
+    quantity = get_cube_oracle_quantity(cube, oracle)
+    if wants_json_response(request):
+        return JsonResponse({"quantity": quantity})
+    return redirect_to_next(request)
+
+
+def wants_json_response(request):
+    return (
+        request.headers.get("x-requested-with") == "XMLHttpRequest"
+        or "application/json" in request.headers.get("accept", "")
+        or request.POST.get("response_format") == "json"
+    )
+
+
+@login_required
+@require_POST
 def add_selected_to_cube(request):
     form = AddCardToCubeForm(request.POST, user=request.user)
     oracle_ids = request.POST.getlist("oracle_ids")
@@ -211,6 +261,26 @@ def add_oracles_to_cube(cube, oracles, quantity):
             cube_card.quantity += quantity
             cube_card.save(update_fields=["quantity", "updated_at"])
     return cube
+
+
+def remove_oracle_from_cube(cube, oracle):
+    cube_card = CubeCard.objects.filter(cube=cube, oracle=oracle, section=CubeCard.Section.MAIN).first()
+    if not cube_card:
+        return
+    if cube_card.quantity > 1:
+        cube_card.quantity -= 1
+        cube_card.save(update_fields=["quantity", "updated_at"])
+    else:
+        cube_card.delete()
+
+
+def get_cube_oracle_quantity(cube, oracle):
+    return (
+        CubeCard.objects.filter(cube=cube, oracle=oracle, section=CubeCard.Section.MAIN)
+        .values_list("quantity", flat=True)
+        .first()
+        or 0
+    )
 
 
 def get_visible_stat_queries(user):

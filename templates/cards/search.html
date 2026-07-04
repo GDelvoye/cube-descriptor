@@ -4,91 +4,150 @@
 
 {% block extra_head %}
   <style>
-    form { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); margin-bottom: 1.5rem; }
-    label { display: grid; gap: 0.25rem; font-weight: 600; }
-    input, select, button { font: inherit; padding: 0.45rem; }
+    label { display: grid; gap: 0.25rem; font-weight: 600; min-width: 0; }
+    input, select, button { font: inherit; max-width: 100%; min-width: 0; padding: 0.45rem; }
+    input, select { width: 100%; }
     button { cursor: pointer; }
-    .bulk-add { border: 1px solid #bbb; border-radius: 0.5rem; padding: 1rem; margin-bottom: 1rem; }
-    .bulk-controls { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); align-items: end; }
+    .search-shell { align-items: start; display: grid; gap: 1.25rem; grid-template-columns: minmax(14rem, 18rem) 1fr; }
+    .search-topbar { align-items: end; background: var(--surface); border: 1px solid var(--line); border-radius: 0.9rem; display: grid; gap: 0.85rem; grid-template-columns: minmax(12rem, 20rem) auto auto 1fr auto; margin-bottom: 1rem; padding: 0.85rem; }
+    .filter-sidebar { background: var(--surface); border: 1px solid var(--line); border-radius: 0.9rem; box-shadow: var(--shadow); padding: 0.85rem; position: sticky; top: 5.5rem; }
+    .filter-sidebar summary { cursor: pointer; font-weight: 800; }
+    .filter-grid { display: grid; gap: 0.75rem; margin-top: 0.85rem; min-width: 0; }
+    .color-checks { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+    .color-checks label { align-items: center; border: 1px solid var(--line); border-radius: 999px; display: flex; gap: 0.25rem; padding: 0.25rem 0.45rem; }
+    .search-utility { align-items: center; display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: flex-end; }
+    .compact-link { color: var(--accent); font-size: 0.9rem; font-weight: 700; text-decoration: none; white-space: nowrap; }
+    .toggle-group { align-items: center; display: inline-flex; gap: 0.25rem; }
+    .toggle-label { color: #666; font-size: 0.85rem; font-weight: 700; }
+    .toggle-choice { border: 1px solid #bbb; border-radius: 999px; color: inherit; font-size: 0.9rem; font-weight: 700; line-height: 1; padding: 0.35rem 0.65rem; text-decoration: none; }
+    .toggle-choice.is-active { background: var(--accent); border-color: var(--accent); color: white; }
+    .view-toggle { border: 0; margin: 0; padding: 0; }
+    .view-toggle legend { display: none; }
+    .view-toggle label { cursor: pointer; display: inline-flex; font-weight: 700; }
+    .view-toggle input { opacity: 0; position: absolute; width: 1px; }
+    .view-toggle input:checked + span { background: var(--accent); border-color: var(--accent); color: white; }
     .card-grid { display: grid; gap: 1rem; }
-    .card { border: 1px solid #ddd; border-radius: 0.5rem; padding: 1rem; }
+    .card-grid.is-images { grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); }
+    .card { background: var(--surface); border: 1px solid var(--line); border-radius: 0.75rem; padding: 0.8rem; position: relative; }
     .card-layout { display: grid; gap: 1rem; grid-template-columns: minmax(8rem, 12rem) 1fr; }
+    .is-images .card-layout { display: block; }
     .card-image { border-radius: 0.5rem; max-width: 100%; }
+    .image-only-title { font-size: 0.95rem; margin: 0.45rem 0 0; }
     .muted { color: #666; }
     .oracle-text { white-space: pre-wrap; }
+    .card-toolbar { align-items: center; display: flex; gap: 0.45rem; justify-content: flex-end; margin-bottom: 0.55rem; min-height: 1.85rem; }
+    .card-actions { display: flex; gap: 0.25rem; }
+    .card-action { align-items: center; background: var(--surface-strong); border: 0; border-radius: 999px; color: white; display: inline-flex; font-weight: 800; height: 1.85rem; justify-content: center; line-height: 1; padding: 0; width: 1.85rem; }
+    .card-action.is-remove { background: #6f625a; }
+    .cube-count { background: var(--accent-soft); border-radius: 999px; color: var(--accent); font-size: 0.8rem; font-weight: 800; padding: 0.2rem 0.45rem; }
     .pagination { display: flex; gap: 1rem; margin-top: 1.5rem; }
-    .language-toggle { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-    .language-toggle strong, .language-toggle a { border: 1px solid #bbb; border-radius: 999px; padding: 0.25rem 0.6rem; text-decoration: none; }
     .fallback-lang { border: 1px solid #bbb; border-radius: 999px; color: #666; font-size: 0.75rem; padding: 0.05rem 0.35rem; }
+    @media (max-width: 48rem) {
+      .search-shell, .search-topbar { grid-template-columns: 1fr; }
+      .filter-sidebar { position: static; }
+      .card-layout { grid-template-columns: 1fr; }
+    }
   </style>
 {% endblock %}
 
 {% block content %}
     <h1>Recherche cartes</h1>
-    {% if user.is_authenticated %}
-      <p class="page-actions"><a href="{% url 'cards:set_preferences' %}">Parametres des extensions</a></p>
-    {% else %}
+    {% if not user.is_authenticated %}
       <p><a href="{% url 'admin:login' %}?next={% url 'cards:search' %}">Se connecter</a> pour ajouter des cartes a un cube.</p>
     {% endif %}
 
-    <p class="language-toggle">
-      Affichage cartes
-      {% if display_language == "en" %}<strong>EN</strong>{% else %}<a href="?{{ language_querystrings.en }}">EN</a>{% endif %}
-      {% if display_language == "fr" %}<strong>FR</strong>{% else %}<a href="?{{ language_querystrings.fr }}">FR</a>{% endif %}
-    </p>
-
-    <form method="get">
-      <input type="hidden" name="display_lang" value="{{ display_language }}">
-      {% if filters.cube %}<input type="hidden" name="cube" value="{{ filters.cube }}">{% endif %}
-      <label>
-        Nom ou type
-        <input name="q" value="{{ filters.q }}" placeholder="Lightning Bolt, Elf...">
-      </label>
-      <label>
-        Couleur
-        <select name="color">
-          <option value="">Toutes</option>
-          {% for color in "WUBRG" %}
-            <option value="{{ color }}" {% if filters.color == color %}selected{% endif %}>{{ color }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>
-        Type
-        <input name="type" value="{{ filters.type }}" placeholder="Creature, Artifact...">
-      </label>
-      <label>
-        Texte oracle
-        <input name="text" value="{{ filters.text }}" placeholder="enters the battlefield">
-      </label>
-      <label>
-        Mana value max
-        <input name="mv_lte" value="{{ filters.mv_lte }}" placeholder="2">
-      </label>
-      <label>
-        Set
-        <select name="set">
-          <option value="">Tous</option>
-          {% for set in sets %}
-            <option value="{{ set.code }}" {% if filters.set == set.code %}selected{% endif %}>{{ set.code }} - {{ set.name }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>
-        Requete sauvegardee
-        <select id="stat-query-select" name="stat_query">
-          <option value="">Aucune</option>
-          {% for stat_query in stat_queries %}
-            <option value="{{ stat_query.pk }}" data-raw-query="{{ stat_query.raw_query }}" {% if filters.stat_query == stat_query.pk|stringformat:"s" %}selected{% endif %}>{{ stat_query.name }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>
-        Requete dynamique
-        <input id="raw-query-input" name="raw_query" value="{{ filters.raw_query }}" placeholder='power=2 AND keyword:Flying'>
-      </label>
-      <button type="submit">Rechercher</button>
+    <form id="search-form" method="get">
+      <input form="search-form" type="hidden" name="display_lang" value="{{ display_language }}">
     </form>
+      <div class="search-topbar">
+        {% if add_card_form and add_card_form.fields.cube.queryset.exists %}
+          <label>
+            Cube cible
+            <select form="search-form" name="cube" id="id_cube" data-submit-on-change>
+              <option value="">Aucun cube selectionne</option>
+              {% for cube in add_card_form.fields.cube.queryset %}
+                <option value="{{ cube.pk }}" {% if filters.cube == cube.pk|stringformat:"s" %}selected{% endif %}>{{ cube.name }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        {% elif user.is_authenticated %}
+          <p><a href="{% url 'cubes:create' %}">Creer un cube</a> pour ajouter des cartes.</p>
+        {% endif %}
+        <fieldset class="view-toggle toggle-group">
+          <legend>Affichage</legend>
+          <span class="toggle-label">Vue</span>
+          <label><input form="search-form" type="radio" name="view" value="text" data-submit-on-change {% if view_mode == "text" %}checked{% endif %}><span class="toggle-choice">Texte</span></label>
+          <label><input form="search-form" type="radio" name="view" value="images" data-submit-on-change {% if view_mode == "images" %}checked{% endif %}><span class="toggle-choice">Images</span></label>
+        </fieldset>
+        <div class="toggle-group" aria-label="Langue des cartes">
+          <span class="toggle-label">Cartes</span>
+          <a class="toggle-choice {% if display_language == 'en' %}is-active{% endif %}" href="?{{ language_querystrings.en }}">EN</a>
+          <a class="toggle-choice {% if display_language == 'fr' %}is-active{% endif %}" href="?{{ language_querystrings.fr }}">FR</a>
+        </div>
+        <div class="search-utility">
+          {% if user.is_authenticated %}
+            <a class="compact-link" href="{% url 'cards:set_preferences' %}">Extensions</a>
+          {% endif %}
+        </div>
+        <button form="search-form" type="submit">Rechercher</button>
+      </div>
+
+      <div class="search-shell">
+        <aside class="filter-sidebar">
+          <details open>
+            <summary>Filtres</summary>
+            <div class="filter-grid">
+              <label>
+                Nom ou type
+                <input form="search-form" name="q" value="{{ filters.q }}" placeholder="Lightning Bolt, Elf...">
+              </label>
+              <div>
+                <strong>Couleurs</strong>
+                <div class="color-checks">
+                  {% for color in "WUBRG" %}
+                    <label><input form="search-form" type="checkbox" name="color" value="{{ color }}" {% if color in filters.colors %}checked{% endif %}> {{ color }}</label>
+                  {% endfor %}
+                </div>
+              </div>
+              <label>
+                Type
+                <input form="search-form" name="type" value="{{ filters.type }}" placeholder="Creature, Artifact...">
+              </label>
+              <label>
+                Texte oracle
+                <input form="search-form" name="text" value="{{ filters.text }}" placeholder="enters the battlefield">
+              </label>
+              <label>
+                Mana value max
+                <input form="search-form" name="mv_lte" value="{{ filters.mv_lte }}" placeholder="2">
+              </label>
+              <label>
+                Set
+                <select form="search-form" name="set">
+                  <option value="">Tous</option>
+                  {% for set in sets %}
+                    <option value="{{ set.code }}" {% if filters.set == set.code %}selected{% endif %}>{{ set.code }} - {{ set.name }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>
+                Requete sauvegardee
+                <select form="search-form" id="stat-query-select" name="stat_query">
+                  <option value="">Aucune</option>
+                  {% for stat_query in stat_queries %}
+                    <option value="{{ stat_query.pk }}" data-raw-query="{{ stat_query.raw_query }}" {% if filters.stat_query == stat_query.pk|stringformat:"s" %}selected{% endif %}>{{ stat_query.name }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>
+                Requete dynamique
+                <input form="search-form" id="raw-query-input" name="raw_query" value="{{ filters.raw_query }}" placeholder='power=2 AND keyword:Flying'>
+              </label>
+            </div>
+          </details>
+        </aside>
+
+        <div>
 
     {% if filters.mv_lte_error %}
       <p>{{ filters.mv_lte_error }}</p>
@@ -97,39 +156,26 @@
       <p>{{ filters.raw_query_error }}</p>
     {% endif %}
 
-    <p class="muted">{{ total_count }} carte{{ total_count|pluralize }} trouvee{{ total_count|pluralize }}.</p>
-
-    {% if add_card_form and add_card_form.fields.cube.queryset.exists %}
-      <form method="post" action="{% url 'cards:add_selected_to_cube' %}">
-        {% csrf_token %}
-        <input type="hidden" name="next" value="{{ request.get_full_path }}">
-        <div class="bulk-add">
-          <h2>Ajout multiple</h2>
-          <div class="bulk-controls">
-            <label>
-              Cube
-              {{ add_card_form.cube }}
-            </label>
-            <label>
-              Quantite par carte
-              {{ add_card_form.quantity }}
-            </label>
-            <button type="submit">Ajouter les cartes selectionnees</button>
-          </div>
-        </div>
-
-        <section class="card-grid">
-          {% for card in page.object_list %}
-            <article class="card">
-              <label>
-                <input type="checkbox" name="oracle_ids" value="{{ card.pk }}">
-                Selectionner
-              </label>
-              {% with printing=card.display_printing %}
-                <div class="card-layout">
-                  <div>
-                    {% if printing.image_url %}<img class="card-image" src="{{ printing.image_url }}" alt="{{ card.display_name }}">{% endif %}
-                  </div>
+          <p class="muted">{{ total_count }} carte{{ total_count|pluralize }} trouvee{{ total_count|pluralize }}.</p>
+      <section class="card-grid {% if view_mode == 'images' %}is-images{% endif %}">
+        {% for card in page.object_list %}
+          <article class="card" data-card-id="{{ card.pk }}">
+            {% if selected_cube %}
+              <div class="card-toolbar">
+                <span class="cube-count" {% if not card.selected_cube_quantity %}hidden{% endif %}>x{{ card.selected_cube_quantity }}</span>
+                <div class="card-actions" aria-label="Modifier {{ selected_cube.name }}">
+                  <button class="card-action js-adjust-button" type="button" title="Ajouter un exemplaire" data-url="{% url 'cards:adjust_cube_card' card.pk %}" data-cube="{{ selected_cube.pk }}" data-action="add" data-csrf="{{ csrf_token }}" onclick="adjustCardQuantity(this)">+</button>
+                  <button class="card-action is-remove js-adjust-button" type="button" title="Retirer un exemplaire" data-url="{% url 'cards:adjust_cube_card' card.pk %}" data-cube="{{ selected_cube.pk }}" data-action="remove" data-csrf="{{ csrf_token }}" onclick="adjustCardQuantity(this)" {% if not card.selected_cube_quantity %}disabled{% endif %}>-</button>
+                </div>
+              </div>
+            {% endif %}
+            {% with printing=card.display_printing %}
+              <div class="card-layout">
+                <div>
+                  {% if printing.image_url %}<img class="card-image" src="{{ printing.image_url }}" alt="{{ card.display_name }}" loading="lazy" decoding="async" fetchpriority="low">{% endif %}
+                  {% if view_mode == "images" %}<h2 class="image-only-title">{{ card.display_name }}{% if card.display_name_is_fallback %} <span class="fallback-lang">EN</span>{% endif %}</h2>{% endif %}
+                </div>
+                {% if view_mode == "text" %}
                   <div>
                     <h2>{{ card.display_name }}{% if card.display_name_is_fallback %} <span class="fallback-lang">EN</span>{% endif %}</h2>
                     <p class="muted">{{ card.mana_cost }} | MV {{ card.mana_value|default:"?" }}{% if card.display_type_line %} | {{ card.display_type_line }}{% if card.display_type_line_is_fallback %} <span class="fallback-lang">EN</span>{% endif %}{% endif %}</p>
@@ -138,34 +184,7 @@
                       <p class="muted">Premier printing importe : {{ printing.set_code|upper }} #{{ printing.collector_number }} - {{ printing.rarity }}</p>
                     {% endif %}
                   </div>
-                </div>
-              {% endwith %}
-            </article>
-          {% empty %}
-            <p>Aucune carte ne correspond aux filtres.</p>
-          {% endfor %}
-        </section>
-      </form>
-    {% else %}
-      {% if user.is_authenticated %}
-        <p><a href="{% url 'cubes:create' %}">Creer un cube</a> pour ajouter des cartes.</p>
-      {% endif %}
-      <section class="card-grid">
-        {% for card in page.object_list %}
-          <article class="card">
-            {% with printing=card.display_printing %}
-              <div class="card-layout">
-                <div>
-                  {% if printing.image_url %}<img class="card-image" src="{{ printing.image_url }}" alt="{{ card.display_name }}">{% endif %}
-                </div>
-                <div>
-                  <h2>{{ card.display_name }}{% if card.display_name_is_fallback %} <span class="fallback-lang">EN</span>{% endif %}</h2>
-                  <p class="muted">{{ card.mana_cost }} | MV {{ card.mana_value|default:"?" }}{% if card.display_type_line %} | {{ card.display_type_line }}{% if card.display_type_line_is_fallback %} <span class="fallback-lang">EN</span>{% endif %}{% endif %}</p>
-                  {% if card.display_oracle_text %}<p class="oracle-text">{% if card.display_oracle_text_is_fallback %}<span class="fallback-lang">EN</span> {% endif %}{{ card.display_oracle_text }}</p>{% endif %}
-                  {% if printing %}
-                    <p class="muted">Premier printing importe : {{ printing.set_code|upper }} #{{ printing.collector_number }} - {{ printing.rarity }}</p>
-                  {% endif %}
-                </div>
+                {% endif %}
               </div>
             {% endwith %}
           </article>
@@ -173,7 +192,8 @@
           <p>Aucune carte ne correspond aux filtres.</p>
         {% endfor %}
       </section>
-    {% endif %}
+        </div>
+      </div>
 
     <nav class="pagination">
       {% if page.has_previous %}
@@ -188,13 +208,73 @@
 
 {% block extra_scripts %}
   <script>
-    const statQuerySelect = document.getElementById("stat-query-select");
-    const rawQueryInput = document.getElementById("raw-query-input");
+    function closestByClass(element, className) {
+      while (element && element !== document) {
+        if (element.classList && element.classList.contains(className)) return element;
+        element = element.parentNode;
+      }
+      return null;
+    }
 
+    function updateCardQuantity(button, quantity) {
+      var card = closestByClass(button, "card");
+      var count = card.querySelector(".cube-count");
+      var removeButton = card.querySelector(".js-adjust-button[data-action='remove']");
+      count.textContent = "x" + quantity;
+      count.hidden = quantity < 1;
+      removeButton.disabled = quantity < 1;
+    }
+
+    function buildAdjustPayload(button) {
+      var payload = new FormData();
+      payload.append("cube", button.getAttribute("data-cube"));
+      payload.append("action", button.getAttribute("data-action"));
+      payload.append("csrfmiddlewaretoken", button.getAttribute("data-csrf"));
+      return payload;
+    }
+
+    function adjustCardQuantity(button) {
+      if (!window.fetch) return;
+
+      button.disabled = true;
+      fetch(button.getAttribute("data-url"), {
+        method: "POST",
+        body: buildAdjustPayload(button),
+        credentials: "same-origin",
+        headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" },
+      })
+        .then(function (response) {
+          if (!response.ok) throw new Error("Request failed");
+          return response.json();
+        })
+        .then(function (data) {
+          updateCardQuantity(button, data.quantity);
+        })
+        .catch(function () {
+          button.disabled = false;
+        })
+        .finally(function () {
+          var action = button.getAttribute("data-action");
+          var count = closestByClass(button, "card").querySelector(".cube-count");
+          button.disabled = action === "remove" ? count.hidden : false;
+        });
+    }
+
+    var statQuerySelect = document.getElementById("stat-query-select");
+    var rawQueryInput = document.getElementById("raw-query-input");
     if (statQuerySelect && rawQueryInput) {
-      statQuerySelect.addEventListener("change", () => {
-        rawQueryInput.value = statQuerySelect.selectedOptions[0]?.dataset.rawQuery || "";
+      statQuerySelect.addEventListener("change", function () {
+        var selectedOption = statQuerySelect.options[statQuerySelect.selectedIndex];
+        rawQueryInput.value = selectedOption ? selectedOption.getAttribute("data-raw-query") || "" : "";
       });
     }
+
+    document.querySelectorAll("[data-submit-on-change]").forEach(function (control) {
+      control.addEventListener("change", function () {
+        var form = document.getElementById(control.getAttribute("form") || "search-form");
+        if (form.requestSubmit) form.requestSubmit();
+        else form.submit();
+      });
+    });
   </script>
 {% endblock %}
