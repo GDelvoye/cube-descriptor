@@ -1,8 +1,11 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
+from django.db import transaction
+
 from cards.models import DEFAULT_AVAILABLE_SET_TYPES, CardPrinting
-from stats.query_cache import refresh_stat_query_cache
+from stats.models import SetIndicatorExpectedValue
+from stats.query_cache import get_visible_stat_queries_for_cache, refresh_stat_query_cache
 from stats.query_engine import QuerySyntaxError
 
 RARE_SLOT_MYTHIC_RATE = 1 / 8
@@ -23,6 +26,7 @@ class SetIndicator:
     label: str
     description: str
     matcher: object
+    stat_query_id: int | None = None
 
 
 SET_INDICATORS = (
@@ -143,6 +147,79 @@ def build_set_indicator_benchmarks(printings_by_set, indicators=None):
     return {key: build_boxplot(values) for key, values in expected_values_by_key.items()}
 
 
+def build_cached_set_indicator_benchmarks(indicators):
+    benchmarks = {}
+    for indicator in indicators:
+        ensure_set_indicator_expected_values(indicator)
+        values = list(get_expected_value_queryset(indicator).values_list("expected", flat=True))
+        benchmarks[indicator.key] = build_boxplot(values)
+    return benchmarks
+
+
+def ensure_set_indicator_expected_values(indicator):
+    if not get_expected_value_queryset(indicator).exists():
+        refresh_set_indicator_expected_values(indicator)
+
+
+def refresh_set_indicator_expected_values(indicator, printings_by_set=None):
+    printings_by_set = printings_by_set or get_official_set_printings()
+    rows = []
+    for printings in printings_by_set:
+        if not printings:
+            continue
+        profile = infer_booster_profile(printings)
+        rows.append(
+            SetIndicatorExpectedValue(
+                set_id=printings[0].set_id,
+                indicator_key=indicator.key,
+                stat_query_id=indicator.stat_query_id,
+                expected=calculate_expected_value(printings, profile, indicator),
+            )
+        )
+
+    with transaction.atomic():
+        get_expected_value_queryset(indicator).delete()
+        SetIndicatorExpectedValue.objects.bulk_create(rows, ignore_conflicts=True)
+
+
+def refresh_code_indicator_expected_values(indicators=None):
+    indicators = indicators or SET_INDICATORS
+    printings_by_set = get_official_set_printings()
+    for indicator in indicators:
+        refresh_set_indicator_expected_values(indicator, printings_by_set)
+
+
+def refresh_query_indicator_expected_values_for_queries(stat_queries):
+    for stat_query in stat_queries:
+        indicator = build_query_indicator_for_stat_query(stat_query)
+        if indicator:
+            refresh_set_indicator_expected_values(indicator)
+
+
+def build_query_indicator_for_stat_query(stat_query):
+    definition = get_query_indicator_definition(stat_query)
+    if not definition:
+        return None
+    matcher = build_stat_query_matcher(stat_query, None)
+    if matcher is None:
+        return None
+    return SetIndicator(definition["key"], definition["label"], definition["description"], matcher, stat_query.pk)
+
+
+def get_query_indicator_definition(stat_query):
+    for definition in QUERY_INDICATOR_DEFINITIONS:
+        if stat_query.name.lower() == definition["query_name"].lower():
+            return definition
+    return None
+
+
+def get_expected_value_queryset(indicator):
+    queryset = SetIndicatorExpectedValue.objects.filter(indicator_key=indicator.key)
+    if indicator.stat_query_id is None:
+        return queryset.filter(stat_query__isnull=True)
+    return queryset.filter(stat_query_id=indicator.stat_query_id)
+
+
 def get_official_set_printings():
     printings = (
         CardPrinting.objects.filter(set__set_type__in=DEFAULT_AVAILABLE_SET_TYPES, lang="en")
@@ -229,13 +306,16 @@ def build_query_indicators(stat_queries=None):
         matcher = build_stat_query_matcher(stat_query, stat_queries)
         if matcher is None:
             continue
-        indicators.append(SetIndicator(definition["key"], definition["label"], definition["description"], matcher))
+        indicators.append(
+            SetIndicator(definition["key"], definition["label"], definition["description"], matcher, stat_query.pk)
+        )
     return indicators
 
 
 def build_stat_query_matcher(stat_query, stat_queries):
     if stat_query.match_cache_refreshed_at is None:
         try:
+            stat_queries = stat_queries or get_visible_stat_queries_for_cache(stat_query)
             refresh_stat_query_cache(stat_query, stat_queries)
         except QuerySyntaxError:
             return None

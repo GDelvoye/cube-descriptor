@@ -12,10 +12,9 @@ from stats.query_engine import QuerySyntaxError, count_cube_matches
 from stats.set_indicators import (
     attach_benchmarks,
     build_available_indicators,
+    build_cached_set_indicator_benchmarks,
     build_cube_indicators,
     build_indicator_options,
-    build_set_indicator_benchmarks,
-    get_official_set_printings,
     get_selected_indicator_keys,
 )
 
@@ -123,13 +122,14 @@ def cube_stats(request, pk):
         form = CubeStatsForm({**request.GET.dict(), **initial})
     indicators_available = build_available_indicators(visible_queries)
     selected_stat_keys = get_selected_indicator_keys(request, indicators_available)
+    selected_indicators = [indicator for indicator in indicators_available if indicator.key in selected_stat_keys]
     booster_size = min(cube.booster_size, total_cards)
     indicators = [
         row
-        for row in build_cube_indicators(cube_cards, booster_size, indicators_available)
+        for row in build_cube_indicators(cube_cards, booster_size, selected_indicators)
         if row["key"] in selected_stat_keys
     ]
-    benchmarks = build_set_indicator_benchmarks(get_official_set_printings(), indicators_available)
+    benchmarks = build_cached_set_indicator_benchmarks(selected_indicators)
     attach_benchmarks(indicators, benchmarks)
     result = None
     error = None

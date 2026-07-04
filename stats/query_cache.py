@@ -9,8 +9,10 @@ from .query_engine import TERM_RE, QuerySyntaxError, build_oracle_query, resolve
 
 def refresh_stat_query_cache(stat_query, stat_queries):
     update_stat_query_dependencies(stat_query, stat_queries)
-    for query in get_refresh_order(stat_query):
+    refreshed_queries = get_refresh_order(stat_query)
+    for query in refreshed_queries:
         refresh_single_stat_query_matches(query, stat_queries)
+    return refreshed_queries
 
 
 def get_visible_stat_queries_for_cache(stat_query):

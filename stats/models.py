@@ -46,3 +46,20 @@ class StatQueryDependency(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["parent", "child"], name="unique_stat_query_dependency"),
         ]
+
+
+class SetIndicatorExpectedValue(models.Model):
+    set = models.ForeignKey("cards.Set", on_delete=models.CASCADE, related_name="indicator_expected_values")
+    indicator_key = models.CharField(max_length=64)
+    stat_query = models.ForeignKey(StatQuery, on_delete=models.CASCADE, null=True, blank=True)
+    expected = models.FloatField()
+    computed_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["set", "indicator_key", "stat_query"],
+                name="unique_set_indicator_expected_value",
+                nulls_distinct=False,
+            ),
+        ]

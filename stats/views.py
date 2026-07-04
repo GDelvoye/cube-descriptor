@@ -17,11 +17,11 @@ from .set_indicators import (
     attach_benchmarks,
     build_available_indicators,
     build_booster_slots,
+    build_cached_set_indicator_benchmarks,
     build_indicator_options,
-    build_set_indicator_benchmarks,
     build_set_indicators,
-    get_official_set_printings,
     get_selected_indicator_keys,
+    refresh_query_indicator_expected_values_for_queries,
 )
 
 
@@ -46,15 +46,14 @@ def set_stats(request, pk):
     visible_stat_queries = get_visible_stat_queries(request.user)
     indicators_available = build_available_indicators(visible_stat_queries)
     selected_stat_keys = get_selected_indicator_keys(request, indicators_available)
+    selected_indicators = [indicator for indicator in indicators_available if indicator.key in selected_stat_keys]
     result = None
     error = None
 
     printings = CardPrinting.objects.filter(set=card_set, lang="en").select_related("oracle", "set")
     printings_list = list(printings)
-    indicators = [
-        row for row in build_set_indicators(printings_list, indicators_available) if row["key"] in selected_stat_keys
-    ]
-    benchmarks = build_set_indicator_benchmarks(get_official_set_printings(), indicators_available)
+    indicators = build_set_indicators(printings_list, selected_indicators)
+    benchmarks = build_cached_set_indicator_benchmarks(selected_indicators)
     attach_benchmarks(indicators, benchmarks)
     if form.is_valid():
         try:
@@ -146,7 +145,8 @@ def stat_query_create(request):
             stat_query.owner = request.user
             stat_query.scope = StatQuery.Scope.USER
             stat_query.save()
-            refresh_stat_query_cache(stat_query, get_visible_stat_queries(request.user))
+            refreshed_queries = refresh_stat_query_cache(stat_query, get_visible_stat_queries(request.user))
+            refresh_query_indicator_expected_values_for_queries(refreshed_queries)
             return redirect("stats:query_detail", pk=stat_query.pk)
     else:
         form = UserStatQueryForm(stat_queries=get_visible_stat_queries(request.user))
@@ -163,7 +163,8 @@ def stat_query_detail(request, pk):
     cache_error = None
     if stat_query.match_cache_refreshed_at is None:
         try:
-            refresh_stat_query_cache(stat_query, get_visible_stat_queries_for_cache(stat_query))
+            refreshed_queries = refresh_stat_query_cache(stat_query, get_visible_stat_queries_for_cache(stat_query))
+            refresh_query_indicator_expected_values_for_queries(refreshed_queries)
             stat_query.refresh_from_db()
         except QuerySyntaxError as exc:
             cache_error = str(exc)
@@ -214,7 +215,8 @@ def stat_query_edit(request, pk):
             )
         if "test_query" not in request.POST and form.is_valid():
             stat_query = form.save()
-            refresh_stat_query_cache(stat_query, get_visible_stat_queries(request.user))
+            refreshed_queries = refresh_stat_query_cache(stat_query, get_visible_stat_queries(request.user))
+            refresh_query_indicator_expected_values_for_queries(refreshed_queries)
             return redirect("stats:query_detail", pk=stat_query.pk)
     else:
         form = UserStatQueryForm(instance=stat_query, stat_queries=get_visible_stat_queries(request.user))

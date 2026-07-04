@@ -1,15 +1,22 @@
 from datetime import date
+from io import StringIO
 from uuid import uuid4
 
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.test import Client, TestCase
 from django.urls import reverse
 
 from cards.models import CardOracle, CardPrinting, Set
 from cubes.models import Cube, CubeCard
-from stats.models import StatQuery, StatQueryDependency, StatQueryMatch
+from stats.models import SetIndicatorExpectedValue, StatQuery, StatQueryDependency, StatQueryMatch
 from stats.query_engine import build_oracle_query, count_cube_matches
-from stats.set_indicators import build_set_indicator_benchmarks, build_set_indicators
+from stats.set_indicators import (
+    SET_INDICATORS,
+    build_cached_set_indicator_benchmarks,
+    build_set_indicator_benchmarks,
+    build_set_indicators,
+)
 
 
 class StatsSourceTests(TestCase):
@@ -364,6 +371,79 @@ class StatsSourceTests(TestCase):
         self.assertAlmostEqual(creatures["d1"], 1.1)
         self.assertAlmostEqual(creatures["median"], 5.5)
         self.assertAlmostEqual(creatures["d9"], 9.9)
+
+    def test_cached_set_indicator_benchmarks_populate_expected_values(self):
+        self.create_printing("Common Creature", "common", "Creature")
+        self.create_printing("Common Instant", "common", "Instant")
+        creature_indicator = next(indicator for indicator in SET_INDICATORS if indicator.key == "creatures")
+
+        benchmarks = build_cached_set_indicator_benchmarks([creature_indicator])
+
+        self.assertIn("creatures", benchmarks)
+        expected_value = SetIndicatorExpectedValue.objects.get(
+            set=self.card_set,
+            indicator_key="creatures",
+            stat_query__isnull=True,
+        )
+        self.assertAlmostEqual(expected_value.expected, 11 / 2)
+
+    def test_refresh_set_indicator_values_command_refreshes_code_indicators(self):
+        self.create_printing("Common Creature", "common", "Creature")
+        self.create_printing("Common Instant", "common", "Instant")
+
+        call_command("refresh_set_indicator_values", "--source", "code", stdout=StringIO())
+
+        expected_value = SetIndicatorExpectedValue.objects.get(
+            set=self.card_set,
+            indicator_key="creatures",
+            stat_query__isnull=True,
+        )
+        self.assertAlmostEqual(expected_value.expected, 11 / 2)
+
+    def test_refresh_stat_query_cache_command_refreshes_query_indicator_expected_values(self):
+        self.create_printing("Doom Blade", "common", "Instant", oracle_text="Destroy target creature.")
+        self.create_printing("Path", "common", "Instant", oracle_text="Exile target creature.")
+        self.create_printing("Bear", "common", "Creature")
+        stat_query = StatQuery.objects.create(owner=self.user, name="removal", raw_query="text:destroy OR text:exile")
+
+        call_command("refresh_stat_query_cache", "--query-id", stat_query.pk, stdout=StringIO())
+
+        expected_value = SetIndicatorExpectedValue.objects.get(
+            set=self.card_set,
+            indicator_key="query_removal",
+            stat_query=stat_query,
+        )
+        self.assertAlmostEqual(expected_value.expected, 22 / 3)
+
+    def test_query_edit_refreshes_query_indicator_expected_values(self):
+        self.create_printing("Doom Blade", "common", "Instant", oracle_text="Destroy target creature.")
+        self.create_printing("Path", "common", "Instant", oracle_text="Exile target creature.")
+        self.create_printing("Swords", "common", "Instant", oracle_text="Exile target creature.")
+        self.create_printing("Bear", "common", "Creature")
+        self.client.post(
+            reverse("stats:query_create"),
+            {"name": "removal", "raw_query": "text:destroy", "description": ""},
+        )
+        stat_query = StatQuery.objects.get(name="removal")
+
+        expected_value = SetIndicatorExpectedValue.objects.get(
+            set=self.card_set,
+            indicator_key="query_removal",
+            stat_query=stat_query,
+        )
+        self.assertAlmostEqual(expected_value.expected, 11 / 4)
+
+        self.client.post(
+            reverse("stats:query_edit", kwargs={"pk": stat_query.pk}),
+            {"name": "removal", "raw_query": "text:exile", "description": ""},
+        )
+
+        expected_value = SetIndicatorExpectedValue.objects.get(
+            set=self.card_set,
+            indicator_key="query_removal",
+            stat_query=stat_query,
+        )
+        self.assertAlmostEqual(expected_value.expected, 22 / 4)
 
     def test_or_query_matches_any_clause(self):
         removal = self.create_printing("Doom Blade", "common", "Instant", oracle_text="Destroy target creature.")

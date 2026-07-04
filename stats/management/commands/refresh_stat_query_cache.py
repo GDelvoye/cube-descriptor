@@ -3,6 +3,7 @@ from django.core.management.base import BaseCommand
 from stats.models import StatQuery
 from stats.query_cache import get_visible_stat_queries_for_cache, refresh_stat_query_cache
 from stats.query_engine import QuerySyntaxError
+from stats.set_indicators import refresh_query_indicator_expected_values_for_queries
 
 
 class Command(BaseCommand):
@@ -20,7 +21,8 @@ class Command(BaseCommand):
         skipped_count = 0
         for stat_query in queries:
             try:
-                refresh_stat_query_cache(stat_query, get_visible_stat_queries_for_cache(stat_query))
+                refreshed_queries = refresh_stat_query_cache(stat_query, get_visible_stat_queries_for_cache(stat_query))
+                refresh_query_indicator_expected_values_for_queries(refreshed_queries)
             except QuerySyntaxError as exc:
                 skipped_count += 1
                 self.stderr.write(self.style.WARNING(f"Skipped {stat_query.pk} ({stat_query.name}): {exc}"))
