@@ -8,3 +8,5 @@ staticfiles/
 media/
 .pytest_cache/
 .ruff_cache/
+todo.md
+
