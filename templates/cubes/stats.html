@@ -73,8 +73,8 @@
               {% for option in indicator_options %}
                 <label><input type="checkbox" name="stats" value="{{ option.key }}" {% if option.selected %}checked{% endif %}> {{ option.label }}</label>
               {% endfor %}
-            <button type="submit">Appliquer</button>
-          </form>
+              <button type="submit">Appliquer</button>
+            </form>
         </details>
       </aside>
 
@@ -125,6 +125,7 @@
       {% if removal_plan.balanced %}
         <p>Le cube est equilibre sur les indicateurs selectionnes.</p>
       {% elif removal_plan.steps %}
+        {% if can_edit %}
         <form method="post" action="{% url 'cubes:apply_adjustment_plan' cube.pk %}">
           {% csrf_token %}
           <input type="hidden" name="display_lang" value="{{ display_language }}">
@@ -133,6 +134,7 @@
           {% for option in indicator_options %}{% if option.selected %}<input type="hidden" name="stats" value="{{ option.key }}">{% endif %}{% endfor %}
           <button type="submit">Creer le cube ameliore</button>
         </form>
+        {% endif %}
         <ol class="removal-steps">
           {% for step in removal_plan.steps %}
             <li class="removal-step">

@@ -1,18 +1,33 @@
 {% extends "base.html" %}
 
-{% block title %}Mes cubes - Cube MTG Analyzer{% endblock %}
+{% block title %}Cubes - Cube MTG Analyzer{% endblock %}
 
 {% block content %}
-  <h1>Mes cubes</h1>
-  <p class="page-actions"><a href="{% url 'cubes:create' %}">Creer un cube</a></p>
+  <h1>Cubes</h1>
+  {% if user.is_authenticated %}
+    <h2>Mes cubes</h2>
+    <p class="page-actions"><a href="{% url 'cubes:create' %}">Creer un cube</a></p>
+    <ul>
+      {% for cube in cubes %}
+        <li>
+          <a href="{% url 'cubes:detail' cube.pk %}">{{ cube.name }}</a>
+          - {{ cube.card_total|default:0 }} cartes - booster {{ cube.booster_size }} - {{ cube.visibility }}
+        </li>
+      {% empty %}
+        <li>Aucun cube pour le moment.</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  <h2>Public cubes</h2>
   <ul>
-    {% for cube in cubes %}
+    {% for cube in public_cubes %}
       <li>
         <a href="{% url 'cubes:detail' cube.pk %}">{{ cube.name }}</a>
-        - {{ cube.card_total|default:0 }} cartes - booster {{ cube.booster_size }}
+        - {{ cube.card_total|default:0 }} cards - booster {{ cube.booster_size }}
       </li>
     {% empty %}
-      <li>Aucun cube pour le moment.</li>
+      <li>No public cubes yet.</li>
     {% endfor %}
   </ul>
 {% endblock %}

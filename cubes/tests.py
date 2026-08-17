@@ -5,6 +5,7 @@ from django.test import Client, TestCase
 from django.urls import reverse
 
 from cards.models import CardOracle
+from stats.models import StatQuery
 
 from .models import Cube, CubeCard
 
@@ -57,6 +58,62 @@ class CubeDetailTests(TestCase):
         self.assertContains(response, "Editer White Bear")
         self.assertContains(response, "Sauvegarder")
         self.assertContains(response, "Retirer du cube")
+
+    def test_anonymous_user_can_view_public_cube_without_edit_actions(self):
+        cube = Cube.objects.create(owner=self.user, name="Portfolio Cube", visibility=Cube.Visibility.PUBLIC)
+        oracle = self.create_oracle("Public Bear", "Creature", colors=["G"], mana_value=2)
+        CubeCard.objects.create(cube=cube, oracle=oracle)
+        self.client.logout()
+
+        response = self.client.get(reverse("cubes:detail", kwargs={"pk": cube.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Portfolio Cube")
+        self.assertContains(response, "Public Bear")
+        self.assertNotContains(response, "Ajouter des cartes")
+        self.assertNotContains(
+            response, reverse("cubes:card_edit", kwargs={"pk": cube.pk, "cube_card_id": cube.cards.first().pk})
+        )
+
+    def test_anonymous_user_cannot_view_private_cube(self):
+        cube = Cube.objects.create(owner=self.user, name="Private Cube", visibility=Cube.Visibility.PRIVATE)
+        self.client.logout()
+
+        response = self.client.get(reverse("cubes:detail", kwargs={"pk": cube.pk}))
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_cube_list_shows_public_cubes_to_anonymous_user(self):
+        Cube.objects.create(owner=self.user, name="Listed Public Cube", visibility=Cube.Visibility.PUBLIC)
+        Cube.objects.create(owner=self.user, name="Hidden Private Cube", visibility=Cube.Visibility.PRIVATE)
+        self.client.logout()
+
+        response = self.client.get(reverse("cubes:list"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Listed Public Cube")
+        self.assertNotContains(response, "Hidden Private Cube")
+        self.assertNotContains(response, "Creer un cube")
+
+    def test_anonymous_user_can_view_public_cube_stats(self):
+        cube = Cube.objects.create(
+            owner=self.user, name="Public Stats Cube", visibility=Cube.Visibility.PUBLIC, booster_size=1
+        )
+        oracle = self.create_oracle("Stats Bear", "Creature", colors=["G"], mana_value=2)
+        CubeCard.objects.create(cube=cube, oracle=oracle)
+        StatQuery.objects.create(
+            owner=self.user, cube=cube, scope=StatQuery.Scope.CUBE, name="Cube creatures", raw_query="type:Creature"
+        )
+        self.client.logout()
+
+        response = self.client.get(
+            reverse("cubes:stats", kwargs={"pk": cube.pk}), {"stats_filter": "1", "stats": ["query_cube-creatures"]}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Public Stats Cube")
+        self.assertContains(response, "Cube creatures")
+        self.assertNotContains(response, "Creer le cube ameliore")
 
     def create_oracle(self, name, type_line, colors, mana_value=0):
         return CardOracle.objects.create(

@@ -4,11 +4,17 @@
 
 {% block content %}
   <h1>Cube MTG Analyzer</h1>
-  <p>Construisez vos cubes, recherchez les cartes disponibles et sauvegardez vos requetes d'analyse.</p>
+  <p>Explore, build, and evaluate Magic: The Gathering cubes with card search, saved analytical queries, and booster-level statistics.</p>
+  <h2>What is a cube?</h2>
+  <p>A cube is a curated card pool designed for repeatable limited play. Instead of opening sealed booster packs, players draft from a hand-built environment where every card, archetype, and color balance is intentional.</p>
+  <h2>What this project does</h2>
+  <p>The app combines a Scryfall-powered card database with cube management tools. It helps compare a cube against real set benchmarks, estimate how often key effects appear in a booster, and document public cube lists for visitors.</p>
+  <h2>Public portfolio</h2>
+  <p>Public cubes are available without signing in, including their card lists and statistics. Private cube editing, custom user queries, and card additions remain available after login.</p>
   <p class="page-actions">
-    <a href="{% url 'cards:search' %}">Rechercher des cartes</a>
-    <a href="{% url 'cubes:list' %}">Mes cubes</a>
-    <a href="{% url 'stats:query_list' %}">Requetes custom</a>
-    <a href="{% url 'admin:index' %}">Administration</a>
+    <a href="{% url 'cubes:list' %}">Browse public cubes</a>
+    <a href="{% url 'cards:search' %}">Search cards</a>
+    {% if user.is_authenticated %}<a href="{% url 'stats:query_list' %}">Custom queries</a>{% endif %}
+    {% if user.is_staff %}<a href="{% url 'admin:index' %}">Administration</a>{% endif %}
   </p>
 {% endblock %}

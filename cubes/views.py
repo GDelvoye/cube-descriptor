@@ -1,6 +1,6 @@
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
-from django.db.models import Prefetch, Sum
+from django.db.models import Prefetch, Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
@@ -30,10 +30,13 @@ from .forms import CubeCardForm, CubeForm
 from .models import Cube, CubeCard
 
 
-@login_required
 def cube_list(request):
-    cubes = Cube.objects.filter(owner=request.user).annotate(card_total=Sum("cards__quantity"))
-    return render(request, "cubes/list.html", {"cubes": cubes})
+    public_cubes = Cube.objects.filter(visibility=Cube.Visibility.PUBLIC).annotate(card_total=Sum("cards__quantity"))
+    owned_cubes = Cube.objects.none()
+    if request.user.is_authenticated:
+        owned_cubes = Cube.objects.filter(owner=request.user).annotate(card_total=Sum("cards__quantity"))
+        public_cubes = public_cubes.exclude(owner=request.user)
+    return render(request, "cubes/list.html", {"cubes": owned_cubes, "public_cubes": public_cubes})
 
 
 @login_required
@@ -50,15 +53,14 @@ def cube_create(request):
     return render(request, "cubes/form.html", {"form": form})
 
 
-@login_required
 def cube_detail(request, pk):
     cube = get_object_or_404(
         Cube.objects.prefetch_related(
             Prefetch("cards", queryset=CubeCard.objects.select_related("oracle", "printing").order_by("oracle__name"))
-        ),
+        ).filter(get_accessible_cube_filter(request.user)),
         pk=pk,
-        owner=request.user,
     )
+    can_edit = request.user.is_authenticated and cube.owner_id == request.user.pk
     cube_cards = list(cube.cards.all())
     total_cards = sum(cube_card.quantity for cube_card in cube_cards)
     display_language = get_display_language(request)
@@ -105,6 +107,7 @@ def cube_detail(request, pk):
             "filter_error": filter_error,
             "stat_queries": visible_queries,
             "selected_query": selected_query,
+            "can_edit": can_edit,
             "display_language": display_language,
             "language_querystrings": build_language_querystrings(request),
         },
@@ -220,15 +223,14 @@ def has_cube_card_type(cube_card, card_type):
     return card_type in (cube_card.oracle.type_line or "").lower()
 
 
-@login_required
 def cube_stats(request, pk):
     cube = get_object_or_404(
         Cube.objects.prefetch_related(
             Prefetch("cards", queryset=CubeCard.objects.select_related("oracle").order_by("oracle__name"))
-        ),
+        ).filter(get_accessible_cube_filter(request.user)),
         pk=pk,
-        owner=request.user,
     )
+    can_edit = request.user.is_authenticated and cube.owner_id == request.user.pk
     cube_cards = list(cube.cards.all())
     total_cards = sum(cube_card.quantity for cube_card in cube_cards)
     display_language = get_display_language(request)
@@ -309,6 +311,7 @@ def cube_stats(request, pk):
             "indicator_options": build_indicator_options(selected_stat_keys, indicators_available),
             "max_removals": max_removals,
             "removal_plan": removal_plan,
+            "can_edit": can_edit,
             "total_cards": total_cards,
             "display_language": display_language,
             "language_querystrings": build_language_querystrings(request),
@@ -436,12 +439,20 @@ def get_max_removals(request):
     return max(1, min(int(raw_max_removals), 50))
 
 
+def get_accessible_cube_filter(user):
+    public_filter = Q(visibility=Cube.Visibility.PUBLIC)
+    if not user.is_authenticated:
+        return public_filter
+    return public_filter | Q(owner=user)
+
+
 def get_visible_stat_queries(user, cube):
-    return (
-        StatQuery.objects.filter(scope=StatQuery.Scope.GLOBAL, owner__isnull=True)
-        | StatQuery.objects.filter(owner=user, scope=StatQuery.Scope.USER)
-        | StatQuery.objects.filter(owner=user, scope=StatQuery.Scope.CUBE, cube=cube)
-    ).order_by("scope", "name")
+    queries = StatQuery.objects.filter(scope=StatQuery.Scope.GLOBAL, owner__isnull=True) | StatQuery.objects.filter(
+        scope=StatQuery.Scope.CUBE, cube=cube
+    )
+    if user.is_authenticated:
+        queries = queries | StatQuery.objects.filter(owner=user, scope=StatQuery.Scope.USER)
+    return queries.order_by("scope", "name")
 
 
 def get_selected_stat_query(request, visible_queries):

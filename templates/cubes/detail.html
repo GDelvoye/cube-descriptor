@@ -44,7 +44,7 @@
 {% endblock %}
 
 {% block content %}
-    <p class="page-actions"><a href="{% url 'cards:search' %}?cube={{ cube.pk }}">Ajouter des cartes</a></p>
+    {% if can_edit %}<p class="page-actions"><a href="{% url 'cards:search' %}?cube={{ cube.pk }}">Ajouter des cartes</a></p>{% endif %}
     <h1>{{ cube.name }}</h1>
     {% if cube.description %}<p>{{ cube.description }}</p>{% endif %}
     <p>{{ total_cards }} cartes | booster {{ cube.booster_size }} | {{ cube.visibility }}</p>
@@ -92,10 +92,14 @@
                   <div class="mana-value-group">
                     {% for cube_card in mana_group.cards %}
                       <div class="cube-card-row">
+                        {% if can_edit %}
                         <a class="cube-card-name" href="{% url 'cubes:card_edit' cube.pk cube_card.pk %}" {% if cube_card.display_printing.image_url %}data-preview-url="{{ cube_card.display_printing.image_url }}" data-preview-alt="{{ cube_card.display_name }}"{% endif %}>
+                        {% else %}
+                        <span class="cube-card-name" {% if cube_card.display_printing.image_url %}data-preview-url="{{ cube_card.display_printing.image_url }}" data-preview-alt="{{ cube_card.display_name }}" tabindex="0"{% endif %}>
+                        {% endif %}
                           {% if cube_card.quantity > 1 %}<span class="cube-card-qty">{{ cube_card.quantity }}x</span>{% endif %}
                           {{ cube_card.display_name }}{% if cube_card.display_name_is_fallback %} <span class="fallback-lang">EN</span>{% endif %}
-                        </a>
+                        {% if can_edit %}</a>{% else %}</span>{% endif %}
                       </div>
                     {% endfor %}
                   </div>
