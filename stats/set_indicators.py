@@ -2,8 +2,9 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from django.db import transaction
+from django.db.models import Exists, OuterRef, Q
 
-from cards.models import DEFAULT_AVAILABLE_SET_TYPES, CardPrinting
+from cards.models import DEFAULT_AVAILABLE_SET_TYPES, CardOracle, CardPrinting
 from stats.models import SetIndicatorExpectedValue
 from stats.query_cache import get_visible_stat_queries_for_cache, refresh_stat_query_cache
 from stats.query_engine import QuerySyntaxError
@@ -30,6 +31,23 @@ class SetIndicator:
 
 
 SET_INDICATORS = (
+    SetIndicator("white", "Blanc", "Cartes blanches", lambda oracle: has_color(oracle, "W")),
+    SetIndicator("blue", "Bleu", "Cartes bleues", lambda oracle: has_color(oracle, "U")),
+    SetIndicator("black", "Noir", "Cartes noires", lambda oracle: has_color(oracle, "B")),
+    SetIndicator("red", "Rouge", "Cartes rouges", lambda oracle: has_color(oracle, "R")),
+    SetIndicator("green", "Vert", "Cartes vertes", lambda oracle: has_color(oracle, "G")),
+    SetIndicator("colorless", "Incolores", "Cartes sans couleur", lambda oracle: len(oracle.colors or []) == 0),
+    SetIndicator(
+        "multicolor", "Multicolores", "Cartes avec au moins deux couleurs", lambda oracle: len(oracle.colors or []) >= 2
+    ),
+    SetIndicator("mv_0", "MV 0", "Cartes avec mana value 0", lambda oracle: compare_mv(oracle, "eq", 0)),
+    SetIndicator("mv_1", "MV 1", "Cartes avec mana value 1", lambda oracle: compare_mv(oracle, "eq", 1)),
+    SetIndicator("mv_2", "MV 2", "Cartes avec mana value 2", lambda oracle: compare_mv(oracle, "eq", 2)),
+    SetIndicator("mv_3", "MV 3", "Cartes avec mana value 3", lambda oracle: compare_mv(oracle, "eq", 3)),
+    SetIndicator("mv_4", "MV 4", "Cartes avec mana value 4", lambda oracle: compare_mv(oracle, "eq", 4)),
+    SetIndicator("mv_5", "MV 5", "Cartes avec mana value 5", lambda oracle: compare_mv(oracle, "eq", 5)),
+    SetIndicator("mv_6", "MV 6", "Cartes avec mana value 6", lambda oracle: compare_mv(oracle, "eq", 6)),
+    SetIndicator("mv_7_plus", "MV 7+", "Cartes avec mana value 7 ou plus", lambda oracle: compare_mv(oracle, "gte", 7)),
     SetIndicator("creatures", "Creatures", "Toutes les creatures", lambda oracle: has_type(oracle, "creature")),
     SetIndicator("lands", "Terrains", "Toutes les cartes de terrain", lambda oracle: has_type(oracle, "land")),
     SetIndicator("artifacts", "Artefacts", "Toutes les cartes d'artefact", lambda oracle: has_type(oracle, "artifact")),
@@ -45,10 +63,6 @@ SET_INDICATORS = (
         "planeswalkers", "Planeswalkers", "Tous les planeswalkers", lambda oracle: has_type(oracle, "planeswalker")
     ),
     SetIndicator("bicolor", "Bicolores", "Cartes exactement bicolores", lambda oracle: len(oracle.colors or []) == 2),
-    SetIndicator(
-        "multicolor", "Multicolores", "Cartes avec au moins deux couleurs", lambda oracle: len(oracle.colors or []) >= 2
-    ),
-    SetIndicator("colorless", "Incolores", "Cartes sans couleur", lambda oracle: len(oracle.colors or []) == 0),
     SetIndicator(
         "flying_creatures",
         "Creatures volantes",
@@ -255,9 +269,10 @@ def build_indicator_options(selected_stat_keys, indicators=None):
 
 def get_selected_indicator_keys(request, indicators=None):
     indicators = indicators or SET_INDICATORS
-    selected_stat_keys = request.GET.getlist("stats")
+    params = request.POST if request.method == "POST" else request.GET
+    selected_stat_keys = params.getlist("stats")
     available_stat_keys = {indicator.key for indicator in indicators}
-    if not selected_stat_keys and "stats_filter" not in request.GET:
+    if not selected_stat_keys and "stats_filter" not in params:
         selected_stat_keys = [indicator.key for indicator in indicators]
     return [key for key in selected_stat_keys if key in available_stat_keys]
 
@@ -268,6 +283,20 @@ def attach_benchmarks(indicators, benchmarks):
         indicator["benchmark"] = benchmark
         if benchmark:
             indicator["marker_position"] = scale_boxplot_value(indicator["expected"], benchmark["d1"], benchmark["d9"])
+    return indicators
+
+
+def attach_removal_projection(indicators, removal_plan, benchmarks):
+    expected_by_key = removal_plan.get("final_expected_by_key", {})
+    for indicator in indicators:
+        if indicator["key"] not in expected_by_key:
+            continue
+        indicator["projected_expected"] = expected_by_key[indicator["key"]]
+        benchmark = benchmarks.get(indicator["key"])
+        if benchmark:
+            indicator["projected_marker_position"] = scale_boxplot_value(
+                indicator["projected_expected"], benchmark["d1"], benchmark["d9"]
+            )
     return indicators
 
 
@@ -288,6 +317,318 @@ def build_cube_indicators(cube_cards, booster_size, indicators=None):
             }
         )
     return rows
+
+
+def build_cube_removal_plan(cube_cards, booster_size, indicators, benchmarks, max_steps=5, available_sets=None):
+    total_cards = sum(cube_card.quantity for cube_card in cube_cards)
+    indicator_matches = {
+        indicator.key: {cube_card.pk for cube_card in cube_cards if indicator.matcher(cube_card.oracle)}
+        for indicator in indicators
+    }
+    matching_counts = {
+        indicator.key: sum(
+            cube_card.quantity for cube_card in cube_cards if cube_card.pk in indicator_matches[indicator.key]
+        )
+        for indicator in indicators
+    }
+    remaining_quantities = {cube_card.pk: cube_card.quantity for cube_card in cube_cards}
+    cube_cards_by_id = {cube_card.pk: cube_card for cube_card in cube_cards}
+    excluded_oracle_ids = {cube_card.oracle_id for cube_card in cube_cards}
+    current_score = calculate_cube_balance_score(
+        matching_counts, total_cards, min(booster_size, total_cards), benchmarks
+    )
+    initial_score = current_score
+    steps = []
+    if total_cards <= 1 or max_steps <= 0:
+        return build_removal_plan_result(
+            steps,
+            initial_score,
+            current_score,
+            current_score == 0,
+            matching_counts,
+            total_cards,
+            min(booster_size, total_cards),
+        )
+
+    for step_number in range(1, max_steps + 1):
+        if current_score == 0:
+            break
+
+        best_candidate = None
+        for cube_card in cube_cards:
+            if remaining_quantities[cube_card.pk] <= 0:
+                continue
+            next_total = total_cards - 1
+            next_booster_size = min(booster_size, next_total)
+            next_counts = matching_counts.copy()
+            for indicator in indicators:
+                if cube_card.pk in indicator_matches[indicator.key]:
+                    next_counts[indicator.key] -= 1
+
+            next_score = calculate_cube_balance_score(next_counts, next_total, next_booster_size, benchmarks)
+            gain = current_score - next_score
+            candidate = {
+                "action": "remove",
+                "cube_card": cube_card,
+                "name": cube_card.oracle.name,
+                "matching_counts": next_counts,
+                "total_cards": next_total,
+                "score": next_score,
+                "gain": gain,
+                "impacts": build_action_impacts(
+                    cube_card.oracle,
+                    indicators,
+                    matching_counts,
+                    total_cards,
+                    min(booster_size, total_cards),
+                    next_counts,
+                    next_total,
+                    next_booster_size,
+                ),
+            }
+            if is_better_candidate(candidate, best_candidate):
+                best_candidate = candidate
+
+        for oracle in build_addition_candidates(
+            available_sets,
+            excluded_oracle_ids,
+            indicators,
+            matching_counts,
+            total_cards,
+            min(booster_size, total_cards),
+            benchmarks,
+        ):
+            next_total = total_cards + 1
+            next_booster_size = min(booster_size, next_total)
+            next_counts = matching_counts.copy()
+            for indicator in indicators:
+                if indicator.matcher(oracle):
+                    next_counts[indicator.key] += 1
+
+            next_score = calculate_cube_balance_score(next_counts, next_total, next_booster_size, benchmarks)
+            gain = current_score - next_score
+            candidate = {
+                "action": "add",
+                "oracle": oracle,
+                "name": oracle.name,
+                "matching_counts": next_counts,
+                "total_cards": next_total,
+                "score": next_score,
+                "gain": gain,
+                "impacts": build_action_impacts(
+                    oracle,
+                    indicators,
+                    matching_counts,
+                    total_cards,
+                    min(booster_size, total_cards),
+                    next_counts,
+                    next_total,
+                    next_booster_size,
+                ),
+            }
+            if is_better_candidate(candidate, best_candidate):
+                best_candidate = candidate
+
+        if best_candidate is None or best_candidate["gain"] <= 0:
+            break
+
+        matching_counts = best_candidate["matching_counts"]
+        total_cards = best_candidate["total_cards"]
+        current_score = best_candidate["score"]
+        if best_candidate["action"] == "remove":
+            remaining_quantities[best_candidate["cube_card"].pk] -= 1
+            step = {
+                "number": step_number,
+                "action": "remove",
+                "cube_card": cube_cards_by_id[best_candidate["cube_card"].pk],
+                "name": best_candidate["name"],
+                "gain": best_candidate["gain"],
+                "score_after": current_score,
+                "impacts": best_candidate["impacts"],
+            }
+        else:
+            excluded_oracle_ids.add(best_candidate["oracle"].pk)
+            step = {
+                "number": step_number,
+                "action": "add",
+                "oracle": best_candidate["oracle"],
+                "name": best_candidate["name"],
+                "gain": best_candidate["gain"],
+                "score_after": current_score,
+                "impacts": best_candidate["impacts"],
+            }
+        steps.append(step)
+
+    return build_removal_plan_result(
+        steps,
+        initial_score,
+        current_score,
+        current_score == 0,
+        matching_counts,
+        total_cards,
+        min(booster_size, total_cards),
+    )
+
+
+def build_removal_plan_result(steps, initial_score, final_score, balanced, matching_counts, total_cards, booster_size):
+    final_expected_by_key = {}
+    for key, matching_count in matching_counts.items():
+        final_expected_by_key[key] = booster_size * matching_count / total_cards if total_cards else 0
+    return {
+        "steps": steps,
+        "initial_score": initial_score,
+        "final_score": final_score,
+        "balanced": balanced,
+        "final_expected_by_key": final_expected_by_key,
+    }
+
+
+def is_better_candidate(candidate, best_candidate):
+    if best_candidate is None:
+        return True
+    return candidate["gain"] > best_candidate["gain"] or (
+        candidate["gain"] == best_candidate["gain"] and candidate["name"].lower() < best_candidate["name"].lower()
+    )
+
+
+def build_addition_candidates(
+    available_sets, excluded_oracle_ids, indicators, matching_counts, total_cards, booster_size, benchmarks, limit=300
+):
+    if available_sets is None:
+        return []
+
+    available_printings = CardPrinting.objects.filter(oracle=OuterRef("pk"), set__in=available_sets, lang="en")
+    base_queryset = CardOracle.objects.filter(Exists(available_printings)).exclude(pk__in=excluded_oracle_ids)
+    desired_constraints, avoided_constraints = build_addition_constraints(
+        indicators, matching_counts, total_cards, booster_size, benchmarks
+    )
+
+    for desired_count in range(min(3, len(desired_constraints)), -1, -1):
+        for avoided_count in range(min(3, len(avoided_constraints)), -1, -1):
+            queryset = base_queryset
+            for constraint in desired_constraints[:desired_count]:
+                queryset = queryset.filter(constraint["query"])
+            for constraint in avoided_constraints[:avoided_count]:
+                queryset = queryset.exclude(constraint["query"])
+            candidates = list(queryset.order_by("name")[:limit])
+            if candidates:
+                return candidates
+    return []
+
+
+def build_addition_constraints(indicators, matching_counts, total_cards, booster_size, benchmarks):
+    desired_constraints = []
+    avoided_constraints = []
+    if total_cards <= 0:
+        return desired_constraints, avoided_constraints
+
+    for indicator in indicators:
+        benchmark = benchmarks.get(indicator.key)
+        query = get_indicator_query(indicator.key)
+        if not benchmark or query is None:
+            continue
+        expected = booster_size * matching_counts[indicator.key] / total_cards
+        q1 = benchmark["q1"]
+        q3 = benchmark["q3"]
+        width = q3 - q1
+        if width <= 0:
+            continue
+        if expected < q1:
+            desired_constraints.append({"query": query, "weight": (q1 - expected) / width})
+        elif expected > q3:
+            avoided_constraints.append({"query": query, "weight": (expected - q3) / width})
+
+    desired_constraints.sort(key=lambda constraint: constraint["weight"], reverse=True)
+    avoided_constraints.sort(key=lambda constraint: constraint["weight"], reverse=True)
+    return desired_constraints, avoided_constraints
+
+
+def get_indicator_query(key):
+    color_queries = {
+        "white": Q(colors__contains=["W"]),
+        "blue": Q(colors__contains=["U"]),
+        "black": Q(colors__contains=["B"]),
+        "red": Q(colors__contains=["R"]),
+        "green": Q(colors__contains=["G"]),
+    }
+    if key in color_queries:
+        return color_queries[key]
+    if key == "colorless":
+        return Q(colors=[])
+    if key.startswith("mv_") and key != "mv_7_plus":
+        return Q(mana_value=int(key.removeprefix("mv_")))
+    if key == "mv_7_plus":
+        return Q(mana_value__gte=7)
+    type_queries = {
+        "creatures": "creature",
+        "lands": "land",
+        "artifacts": "artifact",
+        "enchantments": "enchantment",
+        "instants": "instant",
+        "sorceries": "sorcery",
+        "planeswalkers": "planeswalker",
+    }
+    if key in type_queries:
+        return Q(type_line__icontains=type_queries[key])
+    if key == "cheap":
+        return Q(mana_value__lte=2)
+    if key == "expensive":
+        return Q(mana_value__gte=6)
+    return None
+
+
+def calculate_cube_balance_score(matching_counts, total_cards, booster_size, benchmarks):
+    if total_cards <= 0:
+        return 0
+    score = 0
+    for key, matching_count in matching_counts.items():
+        benchmark = benchmarks.get(key)
+        if not benchmark:
+            continue
+        expected = booster_size * matching_count / total_cards
+        imbalance = calculate_indicator_imbalance(expected, benchmark)
+        score += imbalance * imbalance
+    return score
+
+
+def calculate_indicator_imbalance(value, benchmark):
+    q1 = benchmark["q1"]
+    q3 = benchmark["q3"]
+    width = q3 - q1
+    if width <= 0:
+        return 0
+    if value < q1:
+        return (q1 - value) / width
+    if value > q3:
+        return (value - q3) / width
+    return 0
+
+
+def build_action_impacts(
+    oracle,
+    indicators,
+    current_counts,
+    current_total,
+    current_booster_size,
+    next_counts,
+    next_total,
+    next_booster_size,
+):
+    impacts = []
+    for indicator in indicators:
+        if not indicator.matcher(oracle):
+            continue
+        before = current_booster_size * current_counts[indicator.key] / current_total if current_total else 0
+        after = next_booster_size * next_counts[indicator.key] / next_total if next_total else 0
+        impacts.append(
+            {
+                "label": indicator.label,
+                "before": before,
+                "after": after,
+                "delta": after - before,
+            }
+        )
+    return impacts
 
 
 def build_available_indicators(stat_queries=None):
@@ -425,6 +766,10 @@ def has_type(oracle, card_type):
     return card_type in (oracle.type_line or "").lower()
 
 
+def has_color(oracle, color):
+    return color in (oracle.colors or [])
+
+
 def has_keyword(oracle, keyword):
     return keyword.lower() in [card_keyword.lower() for card_keyword in oracle.keywords or []]
 
@@ -433,6 +778,8 @@ def compare_mv(oracle, operator, value):
     if oracle.mana_value is None:
         return False
     mana_value = Decimal(oracle.mana_value)
+    if operator == "eq":
+        return mana_value == value
     if operator == "lte":
         return mana_value <= value
     return mana_value >= value

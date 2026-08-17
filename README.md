@@ -27,6 +27,16 @@ docker compose run --rm web python manage.py createsuperuser
 docker compose run --rm web python manage.py import_scryfall_bulk --limit 1000
 ```
 
+## Deploiement
+
+Le deploiement public de production est documente dans [`docs/deployment.md`](docs/deployment.md).
+
+Resume :
+
+- dev : `docker compose up -d --build`, disponible sur `http://localhost:8010/` ;
+- prod : `docker compose -p cube-prod -f docker-compose.prod.yml up -d --build`, disponible publiquement sur `https://cube.gdelvoye.fr/` via Caddy ;
+- la prod utilise Gunicorn, WhiteNoise, `DEBUG=False`, une DB Postgres separee, et une configuration `.env.prod` locale non commitee.
+
 Pour importer un fichier Scryfall Bulk local :
 
 ```bash

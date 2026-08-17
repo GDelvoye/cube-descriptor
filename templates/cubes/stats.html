@@ -23,12 +23,25 @@
     .boxplot-box { background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 0.25rem; height: 1.05rem; position: absolute; top: 0.55rem; }
     .boxplot-median { background: var(--surface-strong); bottom: 0.45rem; position: absolute; top: 0.45rem; width: 0.12rem; }
     .boxplot-marker { background: var(--accent); border: 2px solid var(--surface); border-radius: 999px; box-shadow: 0 0 0 1px var(--accent); height: 0.75rem; position: absolute; top: 0.72rem; transform: translateX(-50%); width: 0.75rem; }
+    .boxplot-projected-marker { background: var(--surface-strong); border: 2px solid var(--surface); border-radius: 0.15rem; box-shadow: 0 0 0 1px var(--surface-strong); height: 0.75rem; position: absolute; top: 0.72rem; transform: translateX(-50%) rotate(45deg); width: 0.75rem; }
     .boxplot-anchor { background: transparent; border: 0; border-radius: 999px; height: 0.65rem; padding: 0; position: absolute; top: 0.78rem; transform: translateX(-50%); width: 0.65rem; }
     .boxplot-anchor:first-of-type { transform: none; }
     .boxplot-anchor:last-of-type { transform: translateX(-100%); }
     .boxplot-anchor::after { background: var(--surface-strong); border-radius: 0.35rem; bottom: 1.25rem; color: white; content: attr(aria-label); font-size: 0.72rem; left: 50%; opacity: 0; padding: 0.25rem 0.4rem; pointer-events: none; position: absolute; transform: translateX(-50%); transition: opacity 0.12s ease; white-space: nowrap; z-index: 2; }
     .boxplot-anchor:hover::after, .boxplot-anchor:focus::after { opacity: 1; }
     .empty-indicators { background: var(--surface); border: 1px dashed var(--line); border-radius: 0.85rem; color: var(--muted); padding: 1rem; }
+    .removal-plan { background: var(--surface); border: 1px solid var(--line); border-radius: 0.9rem; box-shadow: var(--shadow); margin: 1.25rem 0; padding: 0.9rem 1rem; }
+    .removal-plan form { align-items: center; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .removal-plan input { max-width: 5rem; }
+    .removal-plan button { background: var(--surface-strong); border: 0; border-radius: 999px; color: white; padding: 0.4rem 0.7rem; }
+    .removal-steps { display: grid; gap: 0.7rem; list-style: none; margin: 0.9rem 0 0; padding: 0; }
+    .removal-step { border: 1px solid var(--line); border-radius: 0.75rem; padding: 0.7rem; }
+    .removal-step strong { color: var(--accent); }
+    .step-card-name { display: inline-block; position: relative; }
+    .step-card-preview { background: var(--surface); border-radius: 0.75rem; box-shadow: 0 1rem 2rem rgba(0, 0, 0, 0.28); left: 0; opacity: 0; padding: 0.35rem; pointer-events: none; position: absolute; top: 1.6rem; transform: translateY(-0.25rem); transition: opacity 0.12s ease, transform 0.12s ease; width: 14rem; z-index: 5; }
+    .step-card-preview img { border-radius: 0.55rem; display: block; width: 100%; }
+    .step-card-name:hover .step-card-preview, .step-card-name:focus-within .step-card-preview { opacity: 1; transform: translateY(0); }
+    .removal-impacts { color: var(--muted); margin: 0.35rem 0 0; }
     @media (max-width: 48rem) {
       .stats-layout { grid-template-columns: 1fr; }
       .stats-sidebar { position: static; }
@@ -53,12 +66,13 @@
       <aside class="stats-sidebar">
         <details open>
           <summary>Stats affichees</summary>
-          <form class="stats-filter" method="get">
-            <input type="hidden" name="display_lang" value="{{ display_language }}">
-            <input type="hidden" name="stats_filter" value="1">
-            {% for option in indicator_options %}
-              <label><input type="checkbox" name="stats" value="{{ option.key }}" {% if option.selected %}checked{% endif %}> {{ option.label }}</label>
-            {% endfor %}
+            <form class="stats-filter" method="get">
+              <input type="hidden" name="display_lang" value="{{ display_language }}">
+              <input type="hidden" name="stats_filter" value="1">
+              <input type="hidden" name="max_removals" value="{{ max_removals }}">
+              {% for option in indicator_options %}
+                <label><input type="checkbox" name="stats" value="{{ option.key }}" {% if option.selected %}checked{% endif %}> {{ option.label }}</label>
+              {% endfor %}
             <button type="submit">Appliquer</button>
           </form>
         </details>
@@ -75,12 +89,18 @@
                   <span class="boxplot-box" style="left: {{ indicator.benchmark.q1_position|stringformat:'f' }}%; width: {{ indicator.benchmark.box_width|stringformat:'f' }}%;"></span>
                   <span class="boxplot-median" style="left: {{ indicator.benchmark.median_position|stringformat:'f' }}%;"></span>
                   <span class="boxplot-marker" title="{{ cube.name }}: {{ indicator.expected|floatformat:2 }}" style="left: {{ indicator.marker_position|stringformat:'f' }}%;"></span>
+                  {% if indicator.projected_marker_position is not None %}
+                    <span class="boxplot-projected-marker" title="Apres simulation: {{ indicator.projected_expected|floatformat:2 }}" style="left: {{ indicator.projected_marker_position|stringformat:'f' }}%;"></span>
+                  {% endif %}
                   <button class="boxplot-anchor" type="button" aria-label="D1 {{ indicator.benchmark.d1|floatformat:2 }}" style="left: 0;"></button>
                   <button class="boxplot-anchor" type="button" aria-label="Q1 {{ indicator.benchmark.q1|floatformat:2 }}" style="left: {{ indicator.benchmark.q1_position|stringformat:'f' }}%;"></button>
                   <button class="boxplot-anchor" type="button" aria-label="Med {{ indicator.benchmark.median|floatformat:2 }}" style="left: {{ indicator.benchmark.median_position|stringformat:'f' }}%;"></button>
                   <button class="boxplot-anchor" type="button" aria-label="Q3 {{ indicator.benchmark.q3|floatformat:2 }}" style="left: {{ indicator.benchmark.q3_position|stringformat:'f' }}%;"></button>
                   <button class="boxplot-anchor" type="button" aria-label="D9 {{ indicator.benchmark.d9|floatformat:2 }}" style="left: 100%;"></button>
                 </div>
+                {% if indicator.projected_expected is not None %}
+                  <p>Apres simulation : <strong>{{ indicator.projected_expected|floatformat:2 }}</strong></p>
+                {% endif %}
               </div>
             {% endif %}
           </article>
@@ -89,6 +109,49 @@
         {% endfor %}
       </section>
     </div>
+
+    <section class="removal-plan">
+      <h2>Plan d'ajustement</h2>
+      <p>Simulation gloutonne basee sur un score de desequilibre normalise par l'intervalle Q1-Q3. A chaque etape, l'algorithme choisit entre retirer une carte du cube et ajouter une carte du pool disponible.</p>
+      <form method="get">
+        <input type="hidden" name="display_lang" value="{{ display_language }}">
+        <input type="hidden" name="stats_filter" value="1">
+        {% for option in indicator_options %}{% if option.selected %}<input type="hidden" name="stats" value="{{ option.key }}">{% endif %}{% endfor %}
+        <label for="max-removals">Actions max</label>
+        <input id="max-removals" type="number" name="max_removals" min="1" max="50" value="{{ max_removals }}">
+        <button type="submit">Simuler</button>
+      </form>
+      <p>Score initial : <strong>{{ removal_plan.initial_score|floatformat:3 }}</strong>. Score final simule : <strong>{{ removal_plan.final_score|floatformat:3 }}</strong>.</p>
+      {% if removal_plan.balanced %}
+        <p>Le cube est equilibre sur les indicateurs selectionnes.</p>
+      {% elif removal_plan.steps %}
+        <form method="post" action="{% url 'cubes:apply_adjustment_plan' cube.pk %}">
+          {% csrf_token %}
+          <input type="hidden" name="display_lang" value="{{ display_language }}">
+          <input type="hidden" name="stats_filter" value="1">
+          <input type="hidden" name="max_removals" value="{{ max_removals }}">
+          {% for option in indicator_options %}{% if option.selected %}<input type="hidden" name="stats" value="{{ option.key }}">{% endif %}{% endfor %}
+          <button type="submit">Creer le cube ameliore</button>
+        </form>
+        <ol class="removal-steps">
+          {% for step in removal_plan.steps %}
+            <li class="removal-step">
+              <strong>{{ step.number }}. {% if step.action == "add" %}Ajouter{% else %}Retirer{% endif %} <span class="step-card-name" tabindex="0">{{ step.name }}{% if step.image_url %}<span class="step-card-preview"><img src="{{ step.image_url }}" alt="{{ step.name }}"></span>{% endif %}</span></strong>
+              <span>gain {{ step.gain|floatformat:3 }}, score apres {{ step.score_after|floatformat:3 }}</span>
+              {% if step.impacts %}
+                <p class="removal-impacts">
+                  {% for impact in step.impacts %}
+                    {{ impact.label }} : {{ impact.before|floatformat:2 }} -> {{ impact.after|floatformat:2 }}{% if not forloop.last %} | {% endif %}
+                  {% endfor %}
+                </p>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ol>
+      {% else %}
+        <p>Aucune action ne reduit le score global avec les indicateurs selectionnes.</p>
+      {% endif %}
+    </section>
 
     <h2>Requetes sauvegardees</h2>
     <ul>
@@ -103,6 +166,7 @@
     <form method="get">
       <input type="hidden" name="display_lang" value="{{ display_language }}">
       <input type="hidden" name="stats_filter" value="1">
+      <input type="hidden" name="max_removals" value="{{ max_removals }}">
       {% for option in indicator_options %}{% if option.selected %}<input type="hidden" name="stats" value="{{ option.key }}">{% endif %}{% endfor %}
       {% if selected_query %}<p>Requete selectionnee : {{ selected_query.name }}</p>{% endif %}
       {{ form.as_p }}

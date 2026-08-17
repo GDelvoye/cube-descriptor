@@ -2,6 +2,7 @@ __pycache__/
 *.py[cod]
 *.sqlite3
 .env
+.env.prod
 .venv/
 venv/
 staticfiles/
@@ -9,4 +10,3 @@ media/
 .pytest_cache/
 .ruff_cache/
 todo.md
-

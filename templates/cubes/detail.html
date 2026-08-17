@@ -4,18 +4,42 @@
 
 {% block extra_head %}
   <style>
-    table { border-collapse: collapse; width: 100%; }
-    th, td { border-bottom: 1px solid #ddd; padding: 0.5rem; text-align: left; vertical-align: top; }
-    input, textarea, button { font: inherit; }
+    input, select, textarea, button { font: inherit; max-width: 100%; }
     input[type="number"] { width: 5rem; }
-    textarea { min-width: 16rem; min-height: 3rem; }
-    .card-image { border-radius: 0.4rem; max-width: 8rem; }
+    textarea { min-height: 3rem; width: 100%; }
     .muted { color: #666; }
-    .oracle-text { white-space: pre-wrap; }
     .actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
     .language-toggle { display: flex; gap: 0.5rem; flex-wrap: wrap; }
     .language-toggle strong, .language-toggle a { border: 1px solid #bbb; border-radius: 999px; padding: 0.25rem 0.6rem; text-decoration: none; }
     .fallback-lang { border: 1px solid #bbb; border-radius: 999px; color: #666; font-size: 0.75rem; padding: 0.05rem 0.35rem; }
+    .cube-filter { align-items: end; background: var(--surface); border: 1px solid var(--line); border-radius: 0.85rem; display: grid; gap: 0.75rem; grid-template-columns: minmax(12rem, 18rem) minmax(16rem, 1fr) auto auto; margin: 1rem 0; padding: 0.85rem; }
+    .cube-filter label { display: grid; gap: 0.25rem; font-weight: 700; }
+    .cube-overview { align-items: start; display: grid; gap: 0.8rem; grid-template-columns: repeat(8, minmax(11rem, 1fr)); padding-bottom: 0.5rem; }
+    .cube-column { background: var(--surface); border: 1px solid var(--line); border-radius: 0.8rem; min-width: 11rem; padding: 0.6rem; }
+    .cube-column.is-white { background: #fff8df; }
+    .cube-column.is-blue { background: #e8f3ff; }
+    .cube-column.is-black { background: #eee9ef; }
+    .cube-column.is-red { background: #ffece5; }
+    .cube-column.is-green { background: #eaf7e8; }
+    .cube-column.is-multicolored { background: #fff1c9; }
+    .cube-column.is-colorless { background: #f1f1ed; }
+    .cube-column.is-lands { background: #f1eadf; }
+    .cube-column-header { align-items: baseline; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; margin-bottom: 0.55rem; padding-bottom: 0.35rem; }
+    .cube-column h2 { font-size: 1rem; margin: 0; }
+    .column-count { color: var(--muted); font-size: 0.85rem; font-weight: 800; }
+    .cube-section { margin-top: 0.6rem; }
+    .cube-section h3 { color: var(--muted); font-size: 0.74rem; letter-spacing: 0.05em; margin: 0 0 0.25rem; text-transform: uppercase; }
+    .cube-card-list { display: grid; gap: 0.18rem; }
+    .cube-card-row { position: relative; }
+    .mana-value-group { border-top: 1px solid var(--line); margin-top: 0.18rem; padding-top: 0.18rem; }
+    .cube-card-name { background: white; border: 1px solid transparent; border-radius: 0.35rem; color: inherit; cursor: pointer; display: block; line-height: 1.2; padding: 0.25rem 0.35rem; text-decoration: none; }
+    .cube-card-name:focus, .cube-card-name:hover { border-color: var(--accent); outline: none; }
+    .cube-card-qty { color: var(--accent); font-weight: 800; }
+    .card-preview-popover { background: white; border: 1px solid var(--line); border-radius: 0.7rem; box-shadow: 0 1rem 2rem #0003; display: none; padding: 0.4rem; pointer-events: none; position: fixed; width: 16rem; z-index: 50; }
+    .card-preview-popover img { border-radius: 0.55rem; display: block; width: 100%; }
+    .card-preview-popover.is-visible { display: block; }
+    .empty-column { color: var(--muted); font-size: 0.9rem; }
+    @media (max-width: 64rem) { .cube-filter { grid-template-columns: 1fr; } }
   </style>
 {% endblock %}
 
@@ -32,8 +56,7 @@
     </p>
     <p class="muted">Tags utiles pour les stats: removal, fixing, ramp, aggro, payoff. Exemple de requete: <code>tag:removal</code>.</p>
 
-    <h2>Filtrer ce cube</h2>
-    <form method="get">
+    <form class="cube-filter" method="get">
       <input type="hidden" name="display_lang" value="{{ display_language }}">
       <label>
         Requete sauvegardee
@@ -54,55 +77,38 @@
     {% if filter_error %}<p>{{ filter_error }}</p>{% endif %}
     {% if raw_query %}<p>{{ filtered_total }} carte{{ filtered_total|pluralize }} matchante{{ filtered_total|pluralize }} sur {{ total_cards }}.</p>{% endif %}
 
-    <h2>Cartes</h2>
-    <table>
-      <thead>
-        <tr><th>Image</th><th>Carte</th><th>Edition</th><th>Metadonnees cube</th><th>Actions</th></tr>
-      </thead>
-      <tbody>
-        {% for cube_card in cube_cards %}
-          <tr>
-            <td>
-              {% if cube_card.display_printing.image_url %}
-                <img class="card-image" src="{{ cube_card.display_printing.image_url }}" alt="{{ cube_card.display_name }}">
-              {% endif %}
-            </td>
-            <td>
-              <strong>{{ cube_card.display_name }}{% if cube_card.display_name_is_fallback %} <span class="fallback-lang">EN</span>{% endif %}</strong><br>
-              <span class="muted">{{ cube_card.oracle.mana_cost }} | MV {{ cube_card.oracle.mana_value|default:"?" }}</span><br>
-              {% if cube_card.display_type_line %}{{ cube_card.display_type_line }}{% if cube_card.display_type_line_is_fallback %} <span class="fallback-lang">EN</span>{% endif %}{% endif %}
-              {% if cube_card.display_oracle_text %}<p class="oracle-text">{% if cube_card.display_oracle_text_is_fallback %}<span class="fallback-lang">EN</span> {% endif %}{{ cube_card.display_oracle_text }}</p>{% endif %}
-            </td>
-            <td>
-              {% if cube_card.display_printing %}
-                {{ cube_card.display_printing.set_code|upper }} #{{ cube_card.display_printing.collector_number }}
-              {% else %}
-                <span class="muted">Printing par defaut</span>
-              {% endif %}
-            </td>
-            <td>
-              <form method="post" action="{% url 'cubes:card_edit' cube.pk cube_card.pk %}">
-                {% csrf_token %}
-                <p>{{ cube_card.edit_form.quantity.label_tag }} {{ cube_card.edit_form.quantity }}</p>
-                <p>{{ cube_card.edit_form.section.label_tag }} {{ cube_card.edit_form.section }}</p>
-                <p>{{ cube_card.edit_form.tags_text.label_tag }} {{ cube_card.edit_form.tags_text }}</p>
-                <p>{{ cube_card.edit_form.notes.label_tag }} {{ cube_card.edit_form.notes }}</p>
-                <button type="submit">Sauvegarder</button>
-              </form>
-            </td>
-            <td>
-              <form class="actions" method="post" action="{% url 'cubes:card_remove' cube.pk cube_card.pk %}">
-                {% csrf_token %}
-                <button name="decrement" value="1" type="submit">-1</button>
-                <button type="submit">Retirer</button>
-              </form>
-            </td>
-          </tr>
-        {% empty %}
-          <tr><td colspan="5">Ce cube est vide.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <section class="cube-overview" aria-label="Vue d'ensemble du cube">
+      {% for column in cube_columns %}
+        <article class="cube-column is-{{ column.key }}">
+          <header class="cube-column-header">
+            <h2>{{ column.label }}</h2>
+            <span class="column-count">{{ column.count }}</span>
+          </header>
+          {% for section in column.sections %}
+            <section class="cube-section">
+              <h3>{{ section.label }} ({{ section.count }})</h3>
+              <div class="cube-card-list">
+                {% for mana_group in section.mana_value_groups %}
+                  <div class="mana-value-group">
+                    {% for cube_card in mana_group.cards %}
+                      <div class="cube-card-row">
+                        <a class="cube-card-name" href="{% url 'cubes:card_edit' cube.pk cube_card.pk %}" {% if cube_card.display_printing.image_url %}data-preview-url="{{ cube_card.display_printing.image_url }}" data-preview-alt="{{ cube_card.display_name }}"{% endif %}>
+                          {% if cube_card.quantity > 1 %}<span class="cube-card-qty">{{ cube_card.quantity }}x</span>{% endif %}
+                          {{ cube_card.display_name }}{% if cube_card.display_name_is_fallback %} <span class="fallback-lang">EN</span>{% endif %}
+                        </a>
+                      </div>
+                    {% endfor %}
+                  </div>
+                {% endfor %}
+              </div>
+            </section>
+          {% empty %}
+            <p class="empty-column">Aucune carte.</p>
+          {% endfor %}
+        </article>
+      {% endfor %}
+    </section>
+    <div class="card-preview-popover" id="card-preview-popover" aria-hidden="true"><img alt=""></div>
 {% endblock %}
 
 {% block extra_scripts %}
@@ -115,5 +121,54 @@
         cubeRawQueryInput.value = cubeStatQuerySelect.selectedOptions[0]?.dataset.rawQuery || "";
       });
     }
+
+    const cardPreviewPopover = document.getElementById("card-preview-popover");
+    const cardPreviewImage = cardPreviewPopover?.querySelector("img");
+
+    function positionCardPreview(anchor) {
+      if (!cardPreviewPopover) return;
+      const rect = anchor.getBoundingClientRect();
+      const gap = 10;
+      const previewWidth = cardPreviewPopover.offsetWidth || 256;
+      const previewHeight = cardPreviewPopover.offsetHeight || 360;
+      let left = rect.right + gap;
+      let top = rect.top;
+
+      if (left + previewWidth > window.innerWidth - gap) {
+        left = rect.left - previewWidth - gap;
+      }
+      if (left < gap) {
+        left = window.innerWidth - previewWidth - gap;
+      }
+      if (top + previewHeight > window.innerHeight - gap) {
+        top = window.innerHeight - previewHeight - gap;
+      }
+      if (top < gap) {
+        top = gap;
+      }
+
+      cardPreviewPopover.style.left = `${left}px`;
+      cardPreviewPopover.style.top = `${top}px`;
+    }
+
+    document.querySelectorAll("[data-preview-url]").forEach((anchor) => {
+      anchor.addEventListener("mouseenter", () => {
+        if (!cardPreviewPopover || !cardPreviewImage) return;
+        cardPreviewImage.src = anchor.dataset.previewUrl;
+        cardPreviewImage.alt = anchor.dataset.previewAlt || "";
+        cardPreviewPopover.classList.add("is-visible");
+        positionCardPreview(anchor);
+      });
+      anchor.addEventListener("mousemove", () => positionCardPreview(anchor));
+      anchor.addEventListener("focus", () => {
+        if (!cardPreviewPopover || !cardPreviewImage) return;
+        cardPreviewImage.src = anchor.dataset.previewUrl;
+        cardPreviewImage.alt = anchor.dataset.previewAlt || "";
+        cardPreviewPopover.classList.add("is-visible");
+        positionCardPreview(anchor);
+      });
+      anchor.addEventListener("mouseleave", () => cardPreviewPopover?.classList.remove("is-visible"));
+      anchor.addEventListener("blur", () => cardPreviewPopover?.classList.remove("is-visible"));
+    });
   </script>
 {% endblock %}

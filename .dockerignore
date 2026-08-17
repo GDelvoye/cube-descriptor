@@ -1,4 +1,6 @@
 .git
+.env
+.env.prod
 .venv
 __pycache__
 *.pyc

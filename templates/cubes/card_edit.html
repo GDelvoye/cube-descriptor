@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block title %}Editer {{ cube_card.display_name }} - {{ cube.name }}{% endblock %}
+
+{% block extra_head %}
+  <style>
+    input, select, textarea, button { font: inherit; max-width: 100%; }
+    input[type="number"] { width: 5rem; }
+    textarea { min-height: 8rem; width: 100%; }
+    .edit-shell { align-items: start; display: grid; gap: 1.25rem; grid-template-columns: minmax(13rem, 18rem) minmax(0, 1fr); }
+    .card-panel, .edit-panel { background: var(--surface); border: 1px solid var(--line); border-radius: 0.9rem; box-shadow: var(--shadow); padding: 1rem; }
+    .card-image { border-radius: 0.65rem; width: 100%; }
+    .muted { color: var(--muted); }
+    .edit-form { display: grid; gap: 0.75rem; }
+    .edit-form p { margin: 0; }
+    .edit-form label { display: block; font-weight: 800; margin-bottom: 0.25rem; }
+    .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
+    .language-toggle { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .language-toggle strong, .language-toggle a { border: 1px solid #bbb; border-radius: 999px; padding: 0.25rem 0.6rem; text-decoration: none; }
+    @media (max-width: 48rem) { .edit-shell { grid-template-columns: 1fr; } }
+  </style>
+{% endblock %}
+
+{% block content %}
+  <p class="page-actions"><a href="{% url 'cubes:detail' cube.pk %}">Retour au cube</a></p>
+  <h1>Editer {{ cube_card.display_name }}</h1>
+  <p class="muted">{{ cube.name }}</p>
+  <p class="language-toggle">
+    Affichage cartes
+    {% if display_language == "en" %}<strong>EN</strong>{% else %}<a href="?{{ language_querystrings.en }}">EN</a>{% endif %}
+    {% if display_language == "fr" %}<strong>FR</strong>{% else %}<a href="?{{ language_querystrings.fr }}">FR</a>{% endif %}
+  </p>
+
+  <div class="edit-shell">
+    <aside class="card-panel">
+      {% if cube_card.display_printing.image_url %}
+        <a href="{{ cube_card.display_printing.image_url }}" target="_blank" rel="noopener"><img class="card-image" src="{{ cube_card.display_printing.image_url }}" alt="{{ cube_card.display_name }}"></a>
+      {% endif %}
+      <p><strong>{{ cube_card.display_name }}</strong></p>
+      <p class="muted">{{ cube_card.oracle.mana_cost }} | MV {{ cube_card.oracle.mana_value|default:"?" }}{% if cube_card.display_type_line %} | {{ cube_card.display_type_line }}{% endif %}</p>
+      {% if cube_card.display_printing %}<p class="muted">{{ cube_card.display_printing.set_code|upper }} #{{ cube_card.display_printing.collector_number }}</p>{% endif %}
+    </aside>
+
+    <section class="edit-panel">
+      <form class="edit-form" method="post" action="{% url 'cubes:card_edit' cube.pk cube_card.pk %}">
+        {% csrf_token %}
+        <p>{{ form.quantity.label_tag }} {{ form.quantity }}</p>
+        <p>{{ form.section.label_tag }} {{ form.section }}</p>
+        <p>{{ form.tags_text.label_tag }} {{ form.tags_text }}</p>
+        <p>{{ form.notes.label_tag }} {{ form.notes }}</p>
+        <button type="submit">Sauvegarder</button>
+      </form>
+
+      <form class="actions" method="post" action="{% url 'cubes:card_remove' cube.pk cube_card.pk %}">
+        {% csrf_token %}
+        <button name="decrement" value="1" type="submit">-1</button>
+        <button type="submit">Retirer du cube</button>
+      </form>
+    </section>
+  </div>
+{% endblock %}

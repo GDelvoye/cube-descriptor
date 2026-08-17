@@ -6,6 +6,7 @@ from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.test import Client, TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from cards.models import CardOracle, CardPrinting, Set
 from cubes.models import Cube, CubeCard
@@ -14,6 +15,7 @@ from stats.query_engine import build_oracle_query, count_cube_matches
 from stats.set_indicators import (
     SET_INDICATORS,
     build_cached_set_indicator_benchmarks,
+    build_cube_removal_plan,
     build_set_indicator_benchmarks,
     build_set_indicators,
 )
@@ -349,6 +351,58 @@ class StatsSourceTests(TestCase):
         self.assertContains(response, "Indicator Cube: 1,50")
         self.assertNotContains(response, "Terrains (#1)")
 
+    def test_cube_removal_plan_prefers_card_fixing_overloaded_indicator(self):
+        first_creature = self.create_printing("A Creature", "common", "Creature")
+        second_creature = self.create_printing("B Creature", "common", "Creature")
+        third_creature = self.create_printing("C Creature", "common", "Creature")
+        first_land = self.create_printing("A Land", "common", "Land")
+        second_land = self.create_printing("B Land", "common", "Land")
+        cube = Cube.objects.create(owner=self.user, name="Removal Cube", booster_size=2)
+        CubeCard.objects.create(cube=cube, oracle=first_creature.oracle)
+        CubeCard.objects.create(cube=cube, oracle=second_creature.oracle)
+        CubeCard.objects.create(cube=cube, oracle=third_creature.oracle)
+        CubeCard.objects.create(cube=cube, oracle=first_land.oracle)
+        CubeCard.objects.create(cube=cube, oracle=second_land.oracle)
+        indicators = [indicator for indicator in SET_INDICATORS if indicator.key in {"creatures", "lands"}]
+        benchmarks = {
+            "creatures": {"q1": 0.5, "q3": 1.0},
+            "lands": {"q1": 0.5, "q3": 1.0},
+        }
+
+        plan = build_cube_removal_plan(
+            list(cube.cards.select_related("oracle")), 2, indicators, benchmarks, max_steps=1
+        )
+
+        self.assertEqual(len(plan["steps"]), 1)
+        self.assertEqual(plan["steps"][0]["cube_card"].oracle.name, "A Creature")
+        self.assertEqual(plan["final_score"], 0)
+
+    def test_cube_removal_plan_can_add_card_from_available_pool(self):
+        first_land = self.create_printing("A Land", "common", "Land")
+        second_land = self.create_printing("B Land", "common", "Land")
+        candidate_creature = self.create_printing("Candidate Creature", "common", "Creature")
+        cube = Cube.objects.create(owner=self.user, name="Addition Cube", booster_size=2)
+        CubeCard.objects.create(cube=cube, oracle=first_land.oracle)
+        CubeCard.objects.create(cube=cube, oracle=second_land.oracle)
+        indicators = [indicator for indicator in SET_INDICATORS if indicator.key in {"creatures", "lands"}]
+        benchmarks = {
+            "creatures": {"q1": 0.5, "q3": 1.0},
+            "lands": {"q1": 0.5, "q3": 2.0},
+        }
+
+        plan = build_cube_removal_plan(
+            list(cube.cards.select_related("oracle")),
+            2,
+            indicators,
+            benchmarks,
+            max_steps=1,
+            available_sets=Set.objects.filter(pk=self.card_set.pk),
+        )
+
+        self.assertEqual(len(plan["steps"]), 1)
+        self.assertEqual(plan["steps"][0]["action"], "add")
+        self.assertEqual(plan["steps"][0]["oracle"], candidate_creature.oracle)
+
     def test_set_indicator_benchmarks_include_deciles_and_quartiles(self):
         old_set = Set.objects.create(code="old", name="Old", set_type="expansion")
         mid_set = Set.objects.create(code="mid", name="Middle", set_type="expansion")
@@ -609,6 +663,52 @@ class StatsSourceTests(TestCase):
 
         self.assertEqual(count, 1)
         self.assertEqual(rows, [destroy_cube_card])
+
+    def test_query_reference_uses_match_cache_in_cube_search(self):
+        stat_query = StatQuery.objects.create(
+            owner=self.user,
+            name="Removal",
+            raw_query="text:destroy",
+            match_cache_refreshed_at=timezone.now(),
+        )
+        cached_card = self.create_printing("Cached Match", "common", "Instant", oracle_text="Draw a card.")
+        direct_match = self.create_printing("Direct Match", "common", "Instant", oracle_text="Destroy target creature.")
+        StatQueryMatch.objects.create(stat_query=stat_query, oracle=cached_card.oracle)
+        cube = Cube.objects.create(owner=self.user, name="Cached Query Cube")
+        cached_cube_card = CubeCard.objects.create(cube=cube, oracle=cached_card.oracle)
+        CubeCard.objects.create(cube=cube, oracle=direct_match.oracle)
+
+        count, rows = count_cube_matches(
+            list(cube.cards.select_related("oracle")),
+            'query:"Removal"',
+            stat_queries=StatQuery.objects.filter(owner=self.user),
+        )
+
+        self.assertEqual(count, 1)
+        self.assertEqual(rows, [cached_cube_card])
+
+    def test_tag_query_reference_keeps_direct_cube_matching(self):
+        stat_query = StatQuery.objects.create(
+            owner=self.user,
+            name="Tagged Removal",
+            raw_query="tag:removal",
+            match_cache_refreshed_at=timezone.now(),
+        )
+        tagged_card = self.create_printing("Tagged Card", "common", "Instant")
+        cached_only_card = self.create_printing("Cached Only", "common", "Instant")
+        StatQueryMatch.objects.create(stat_query=stat_query, oracle=cached_only_card.oracle)
+        cube = Cube.objects.create(owner=self.user, name="Tagged Query Cube")
+        tagged_cube_card = CubeCard.objects.create(cube=cube, oracle=tagged_card.oracle, tags=["removal"])
+        CubeCard.objects.create(cube=cube, oracle=cached_only_card.oracle)
+
+        count, rows = count_cube_matches(
+            list(cube.cards.select_related("oracle")),
+            'query:"Tagged Removal"',
+            stat_queries=StatQuery.objects.filter(owner=self.user),
+        )
+
+        self.assertEqual(count, 1)
+        self.assertEqual(rows, [tagged_cube_card])
 
     def test_query_reference_rejects_cycles(self):
         first = StatQuery.objects.create(owner=self.user, name="First", raw_query="text:destroy")

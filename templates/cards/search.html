@@ -10,7 +10,7 @@
     button { cursor: pointer; }
     .search-shell { align-items: start; display: grid; gap: 1.25rem; grid-template-columns: minmax(14rem, 18rem) 1fr; }
     .search-topbar { align-items: end; background: var(--surface); border: 1px solid var(--line); border-radius: 0.9rem; display: grid; gap: 0.85rem; grid-template-columns: minmax(12rem, 20rem) auto auto 1fr auto; margin-bottom: 1rem; padding: 0.85rem; }
-    .filter-sidebar { background: var(--surface); border: 1px solid var(--line); border-radius: 0.9rem; box-shadow: var(--shadow); padding: 0.85rem; position: sticky; top: 5.5rem; }
+    .filter-sidebar { background: var(--surface); border: 1px solid var(--line); border-radius: 0.9rem; box-shadow: var(--shadow); max-height: calc(100vh - 6.5rem); overflow-y: auto; overscroll-behavior: contain; padding: 0.85rem; position: sticky; top: 5.5rem; }
     .filter-sidebar summary { cursor: pointer; font-weight: 800; }
     .filter-grid { display: grid; gap: 0.75rem; margin-top: 0.85rem; min-width: 0; }
     .color-checks { display: flex; flex-wrap: wrap; gap: 0.35rem; }
@@ -27,7 +27,7 @@
     .view-toggle input { opacity: 0; position: absolute; width: 1px; }
     .view-toggle input:checked + span { background: var(--accent); border-color: var(--accent); color: white; }
     .card-grid { display: grid; gap: 1rem; }
-    .card-grid.is-images { grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); }
+    .card-grid.is-images { grid-template-columns: repeat(auto-fill, minmax(12rem, 16rem)); justify-content: start; }
     .card { background: var(--surface); border: 1px solid var(--line); border-radius: 0.75rem; padding: 0.8rem; position: relative; }
     .card-layout { display: grid; gap: 1rem; grid-template-columns: minmax(8rem, 12rem) 1fr; }
     .is-images .card-layout { display: block; }
@@ -172,7 +172,7 @@
             {% with printing=card.display_printing %}
               <div class="card-layout">
                 <div>
-                  {% if printing.image_url %}<img class="card-image" src="{{ printing.image_url }}" alt="{{ card.display_name }}" loading="lazy" decoding="async" fetchpriority="low">{% endif %}
+                  {% if printing.image_url %}<a href="{{ printing.image_url }}" target="_blank" rel="noopener"><img class="card-image" src="{{ printing.image_url }}" alt="{{ card.display_name }}" loading="lazy" decoding="async" fetchpriority="low"></a>{% endif %}
                   {% if view_mode == "images" %}<h2 class="image-only-title">{{ card.display_name }}{% if card.display_name_is_fallback %} <span class="fallback-lang">EN</span>{% endif %}</h2>{% endif %}
                 </div>
                 {% if view_mode == "text" %}

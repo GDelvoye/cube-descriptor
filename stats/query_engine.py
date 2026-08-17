@@ -186,6 +186,9 @@ def parse_term(token, available_sets=None, stat_queries=None, resolving_query_id
     if field in {"query", "query_id"}:
         stat_query = resolve_stat_query(field, value, stat_queries)
         next_resolving_ids = next_query_resolution_ids(stat_query, resolving_query_ids)
+        cached_matcher = cached_stat_query_matcher(stat_query, stat_queries, next_resolving_ids)
+        if cached_matcher:
+            return cached_matcher
         return parse_query(
             stat_query.raw_query,
             available_sets=available_sets,
@@ -194,6 +197,40 @@ def parse_term(token, available_sets=None, stat_queries=None, resolving_query_id
         )[0]
 
     raise QuerySyntaxError(f"Filtre non reconnu: {token}")
+
+
+def cached_stat_query_matcher(stat_query, stat_queries, resolving_query_ids):
+    if not can_use_stat_query_cache(stat_query, stat_queries, resolving_query_ids):
+        return None
+    if stat_query.match_cache_refreshed_at is None:
+        try:
+            from .query_cache import refresh_stat_query_cache
+
+            refresh_stat_query_cache(stat_query, stat_queries)
+            stat_query.refresh_from_db(fields=["match_cache_refreshed_at"])
+        except QuerySyntaxError:
+            return None
+    matching_oracle_ids = set(stat_query.matches.values_list("oracle_id", flat=True))
+    return lambda cube_card: cube_card.oracle_id in matching_oracle_ids
+
+
+def can_use_stat_query_cache(stat_query, stat_queries, resolving_query_ids):
+    for token in tokenize_query(stat_query.raw_query):
+        term_match = TERM_RE.match(token)
+        if not term_match:
+            continue
+        field = term_match.group("field").lower()
+        if field == "tag":
+            return False
+        if field in {"query", "query_id"}:
+            try:
+                nested_query = resolve_stat_query(field, unquote(term_match.group("value")), stat_queries)
+                next_resolving_ids = next_query_resolution_ids(nested_query, resolving_query_ids)
+            except QuerySyntaxError:
+                return False
+            if not can_use_stat_query_cache(nested_query, stat_queries, next_resolving_ids):
+                return False
+    return True
 
 
 def parse_oracle_query_term(token, available_sets=None, stat_queries=None, resolving_query_ids=None):
